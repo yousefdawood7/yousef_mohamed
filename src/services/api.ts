@@ -2,13 +2,21 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+let expoExtra: any = null;
+try {
+  const Constants = require('expo-constants')?.default || require('expo-constants');
+  expoExtra = Constants?.expoConfig?.extra;
+} catch (_) {}
+
 const AUTH_TOKEN_KEY = '@dr_hakeem_auth_token';
 const USER_KEY = '@dr_hakeem_user';
 
-// Determine default API Base URL per platform
+// Determine default API Base URL per platform (supports env secrets and expo extra)
 export const getApiBaseUrl = (): string => {
   const url =
+    process.env.EXPO_PUBLIC_API_BASE_URL ||
     process.env.EXPO_PUBLIC_API_URL ||
+    expoExtra?.apiBaseUrl ||
     'https://magenta-stork-707380.hostingersite.com/api/v1';
   return url.endsWith('/') ? url.slice(0, -1) : url;
 };

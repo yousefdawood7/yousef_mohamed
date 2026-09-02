@@ -1,9 +1,28 @@
 import mqtt, { MqttClient } from 'mqtt';
 
-const WS_URL = 'wss://a20566c276a245bd862cd068994dec4e.s1.eu.hivemq.cloud:8884/mqtt';
+let expoExtra: any = null;
+try {
+  const Constants = require('expo-constants')?.default || require('expo-constants');
+  expoExtra = Constants?.expoConfig?.extra;
+} catch (_) {}
+
+const WS_URL =
+  process.env.EXPO_PUBLIC_MQTT_BROKER_URL ||
+  expoExtra?.mqttBrokerUrl ||
+  'wss://a20566c276a245bd862cd068994dec4e.s1.eu.hivemq.cloud:8884/mqtt';
+
 const TOPIC = 'esp32/status';
-const USERNAME = 'yd7';
-const PASSWORD = '123456789';
+
+const USERNAME =
+  process.env.EXPO_PUBLIC_MQTT_USERNAME ||
+  expoExtra?.mqttUsername ||
+  'yd7';
+
+const PASSWORD =
+  process.env.EXPO_PUBLIC_MQTT_PASSWORD ||
+  expoExtra?.mqttPassword ||
+  '123456789';
+
 const KEEP_ALIVE_INTERVAL_MS = 20000; // 20s (well under 60s ESP32 timeout)
 
 export type RobotStatus = 'sick' | 'good';

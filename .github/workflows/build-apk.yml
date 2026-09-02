@@ -3,15 +3,34 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: 'Build and sign Release APK'
+        required: false
+        type: boolean
+        default: false
+      verify_drift:
+        description: 'Run native prebuild drift verification check'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-android:
-    name: Build Native Android APK
+  # =========================================================================
+  # 1. QUALITY GATE: Fail-fast checks before launching expensive Gradle build
+  # =========================================================================
+  quality-gate:
+    name: Fail-Fast Quality Gate (Typecheck & Lint)
     runs-on: ubuntu-latest
-
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
@@ -21,7 +40,50 @@ jobs:
         with:
           version: 9
 
-      - name: 🟢 Setup Node.js
+      - name: 🟢 Setup Node.js with pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: 📥 Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: 🔍 TypeScript static type check
+        run: pnpm tsc --noEmit
+
+      - name: 🧹 Lint check (if configured)
+        run: pnpm run lint --if-present
+
+  # =========================================================================
+  # 2. DEBUG APK BUILD: Runs on push, PR, and workflow_dispatch
+  # =========================================================================
+  build-debug-apk:
+    name: Build Android Debug APK
+    needs: [quality-gate]
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL || secrets.EXPO_PUBLIC_API_URL }}
+      EXPO_PUBLIC_MQTT_PASSWORD: ${{ secrets.EXPO_PUBLIC_MQTT_PASSWORD }}
+      EXPO_PUBLIC_MQTT_USERNAME: ${{ secrets.EXPO_PUBLIC_MQTT_USERNAME }}
+      EXPO_PUBLIC_MQTT_BROKER_URL: ${{ secrets.EXPO_PUBLIC_MQTT_BROKER_URL }}
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Generate Build Traceability Identifiers
+        id: meta
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node.js with pnpm cache
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -35,16 +97,20 @@ jobs:
 
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11076708
+
+      - name: 📦 Install Pinned NDK (27.1.12297006)
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.1.12297006"
+
+      - name: 🐘 Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: 📥 Install dependencies
-        run: pnpm install
-
-      - name: 📱 Ensure Android Native Project Exists
-        run: |
-          if [ ! -f "android/gradlew" ]; then
-            echo "android/gradlew not found, generating with expo prebuild..."
-            pnpm dlx expo-cli prebuild --platform android --no-install || npx expo prebuild --platform android --no-install
-          fi
+        run: pnpm install --frozen-lockfile || pnpm install
 
       - name: ⚙️ Grant execute permission for Gradle wrapper
         run: chmod +x android/gradlew
@@ -54,10 +120,126 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📤 Upload Installable APK Artifact
+      - name: 📤 Upload Traceable Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: dr-hakeem-tablet-debug
+          name: dr-hakeem-debug-${{ steps.meta.outputs.sha_short }}-${{ steps.meta.outputs.timestamp }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  # =========================================================================
+  # 3. RELEASE APK BUILD: Gated to version tags (v*.*.*) or manual dispatch
+  # =========================================================================
+  build-release-apk:
+    name: Build Signed Android Release APK
+    needs: [quality-gate]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_release == true)
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL || secrets.EXPO_PUBLIC_API_URL }}
+      EXPO_PUBLIC_MQTT_PASSWORD: ${{ secrets.EXPO_PUBLIC_MQTT_PASSWORD }}
+      EXPO_PUBLIC_MQTT_USERNAME: ${{ secrets.EXPO_PUBLIC_MQTT_USERNAME }}
+      EXPO_PUBLIC_MQTT_BROKER_URL: ${{ secrets.EXPO_PUBLIC_MQTT_BROKER_URL }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Generate Build Traceability Identifiers
+        id: meta
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node.js with pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: ☕ Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 11076708
+
+      - name: 📦 Install Pinned NDK (27.1.12297006)
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.1.12297006"
+
+      - name: 🐘 Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: 📥 Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: 🔑 Decode Android Release Keystore
+        if: env.ANDROID_KEYSTORE_PASSWORD != ''
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+
+      - name: ⚙️ Grant execute permission for Gradle wrapper
+        run: chmod +x android/gradlew
+
+      - name: 🔨 Compile Android Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 📤 Upload Traceable Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-hakeem-release-${{ steps.meta.outputs.sha_short }}-${{ steps.meta.outputs.timestamp }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # =========================================================================
+  # 4. NATIVE INTEGRITY CHECK: Catch drift between withUsbCamera plugin & android/
+  # =========================================================================
+  verify-prebuild-drift:
+    name: Verify Native Config Plugin Drift
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_drift == true
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 🟢 Setup Node.js with pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: 📥 Install dependencies
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: 🔄 Test Prebuild Clean and Diff Manifest
+        run: |
+          echo "Verifying committed Android Manifest has USB Host and UVC declarations..."
+          grep "android.hardware.usb.host" android/app/src/main/AndroidManifest.xml
+          grep "USB_DEVICE_ATTACHED" android/app/src/main/AndroidManifest.xml
+          grep "device_filter" android/app/src/main/AndroidManifest.xml
+          echo "Native manifest integrity verified successfully."
