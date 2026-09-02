@@ -26,7 +26,7 @@ export const apiClient = axios.create({
   headers: {
     Accept: 'application/json',
   },
-  timeout: 30000, // 30s timeout for AI model inference
+  timeout: 90000, // 90s timeout for AI PyTorch model inference & Grad-CAM
 });
 
 // Request Interceptor: Attach Sanctum Bearer Token (with seamless test session resolution)
@@ -158,6 +158,8 @@ export interface DiagnosisResult {
   alpha?: number;
   top_3?: TopPrediction[];
   top_predictions?: TopPrediction[];
+  error_message?: string | null;
+  status_label?: string | null;
   created_at: string;
 }
 
@@ -321,9 +323,18 @@ export const diagnosesApi = {
     const formData = new FormData();
 
     if (Platform.OS === 'web') {
-      // On Web, fetch data URI or blob and append
-      const res = await fetch(imageUri);
-      const blob = await res.blob();
+      let blob: Blob;
+      if (imageUri.startsWith('data:')) {
+        const parts = imageUri.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(parts[1]);
+        const array = [];
+        for (let i = 0; i < binary.length; i++) array.push(binary.charCodeAt(i));
+        blob = new Blob([new Uint8Array(array)], { type: mime });
+      } else {
+        const res = await fetch(imageUri);
+        blob = await res.blob();
+      }
       formData.append('file', blob, 'lesion_scan.jpg');
     } else {
       // On React Native Mobile
@@ -336,11 +347,11 @@ export const diagnosesApi = {
 
     formData.append('tta', tta ? 'true' : 'false');
 
-    const response = await apiClient.post<{ success: boolean; data: DiagnosisResult }>('/diagnoses/process', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await apiClient.post<{ success: boolean; data: DiagnosisResult }>('/diagnoses/process', formData);
+
+    if (response.data?.data?.status === 'failed') {
+      throw new Error(response.data.data.error_message || 'AI Diagnosis engine timed out or failed.');
+    }
 
     return response.data.data;
   },
@@ -352,8 +363,18 @@ export const diagnosesApi = {
     const formData = new FormData();
 
     if (Platform.OS === 'web') {
-      const res = await fetch(imageUri);
-      const blob = await res.blob();
+      let blob: Blob;
+      if (imageUri.startsWith('data:')) {
+        const parts = imageUri.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const binary = atob(parts[1]);
+        const array = [];
+        for (let i = 0; i < binary.length; i++) array.push(binary.charCodeAt(i));
+        blob = new Blob([new Uint8Array(array)], { type: mime });
+      } else {
+        const res = await fetch(imageUri);
+        blob = await res.blob();
+      }
       formData.append('file', blob, 'lesion_scan.jpg');
     } else {
       formData.append('file', {
@@ -365,11 +386,14 @@ export const diagnosesApi = {
 
     formData.append('alpha', alpha.toString());
 
-    const response = await apiClient.post<{ success: boolean; data: DiagnosisResult }>('/diagnoses/explain', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await apiClient.post<{ success: boolean; data: DiagnosisResult }>('/diagnoses/explain', formData);
+
+    if (response.data?.data?.status === 'failed') {
+      throw new Error(
+        response.data.data.error_message ||
+        'AI Model server is currently warming up on Railway. Please try again in 10-15 seconds.'
+      );
+    }
 
     return response.data.data;
   },

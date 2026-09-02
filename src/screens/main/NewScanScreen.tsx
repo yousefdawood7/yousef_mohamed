@@ -265,8 +265,8 @@ export const NewScanScreen: React.FC = () => {
       // Send image to Dr. Hakeem AI diagnosis & heatmap explainability engine
       const diagnosisResult = await diagnosesApi.explainScan(capturedUri, 0.45);
       navigation.navigate('DiagnosticReport', {
-        scanId: diagnosisResult.id.toString(),
-        title: `${diagnosisResult.label_ar} (${diagnosisResult.predicted_label})`,
+        scanId: (diagnosisResult.id || 1).toString(),
+        title: `${diagnosisResult.label_ar || 'تشخيص'} (${diagnosisResult.predicted_label || 'Finding'})`,
         imageUri: diagnosisResult.image_url || capturedUri,
         diagnosisData: diagnosisResult,
       });
