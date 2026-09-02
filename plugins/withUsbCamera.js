@@ -1,6 +1,22 @@
-const { withAndroidManifest } = require('@expo/config-plugins');
+let withAndroidManifest;
+try {
+  const plugins = require('@expo/config-plugins');
+  withAndroidManifest = plugins.withAndroidManifest;
+} catch (e1) {
+  try {
+    const plugins = require('expo/config-plugins');
+    withAndroidManifest = plugins.withAndroidManifest;
+  } catch (e2) {
+    // If not found in standalone Gradle environment, manifest is already prebuilt in android/
+    withAndroidManifest = null;
+  }
+}
 
 const withUsbCamera = (config) => {
+  if (!withAndroidManifest) {
+    return config;
+  }
+
   return withAndroidManifest(config, async (config) => {
     const androidManifest = config.modResults.manifest;
 
