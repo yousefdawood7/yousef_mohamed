@@ -53,7 +53,7 @@ jobs:
         run: pnpm tsc --noEmit
 
       - name: 🧹 Lint check (if configured)
-        run: pnpm run lint --if-present
+        run: pnpm run --if-present lint
 
   # =========================================================================
   # 2. DEBUG APK BUILD: Runs on push, PR, and workflow_dispatch
