@@ -39,6 +39,13 @@ jobs:
       - name: 📥 Install dependencies
         run: pnpm install
 
+      - name: 📱 Ensure Android Native Project Exists
+        run: |
+          if [ ! -f "android/gradlew" ]; then
+            echo "android/gradlew not found, generating with expo prebuild..."
+            pnpm dlx expo-cli prebuild --platform android --no-install || npx expo prebuild --platform android --no-install
+          fi
+
       - name: ⚙️ Grant execute permission for Gradle wrapper
         run: chmod +x android/gradlew
 
