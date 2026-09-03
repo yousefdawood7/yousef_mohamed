@@ -30,7 +30,6 @@ export const DashboardScreen: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -94,18 +93,9 @@ export const DashboardScreen: React.FC = () => {
     loadDashboardData();
   };
 
-  // Filtered recent scans based on live search bar input
-  const filteredRecentScans = useMemo(() => {
-    if (!stats?.recent_scans) return [];
-    if (!searchQuery.trim()) return stats.recent_scans;
-    const q = searchQuery.toLowerCase().trim();
-    return stats.recent_scans.filter((item) => {
-      const code = (item.patient_id_code || `DX-${item.id}`).toLowerCase();
-      const labelEn = (item.predicted_label || '').toLowerCase();
-      const labelAr = item.label_ar || '';
-      return code.includes(q) || labelEn.includes(q) || labelAr.includes(q);
-    });
-  }, [stats?.recent_scans, searchQuery]);
+  const recentScans = useMemo(() => {
+    return stats?.recent_scans || [];
+  }, [stats?.recent_scans]);
 
   const totalDiseaseCases = useMemo(() => {
     if (!stats?.disease_distribution) return 0;
@@ -177,38 +167,6 @@ export const DashboardScreen: React.FC = () => {
 
         <View style={styles.headerRightGroup}>
           {/* Live Search Bar */}
-          <View style={styles.searchBar}>
-            <Feather name="search" size={15} color="#94A3B8" style={styles.searchIcon} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by case code or diagnosis..."
-              placeholderTextColor="#94A3B8"
-              style={[
-                styles.searchInput,
-                Platform.OS === 'web' && ({ outlineStyle: 'none', outline: 'none' } as any),
-              ]}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Feather name="x" size={14} color="#94A3B8" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Quick Refresh Icon */}
-          <TouchableOpacity
-            style={styles.iconCircleBtn}
-            onPress={handleRefresh}
-            disabled={refreshing}
-            activeOpacity={0.7}
-          >
-            <Feather
-              name="refresh-cw"
-              size={17}
-              color={refreshing ? colors.primary : '#475569'}
-            />
-          </TouchableOpacity>
 
           {/* Doctor Initials Avatar */}
           <TouchableOpacity
@@ -447,8 +405,8 @@ export const DashboardScreen: React.FC = () => {
                 </View>
 
                 {/* Table Data Rows */}
-                {filteredRecentScans.length > 0 ? (
-                  filteredRecentScans.map((item) => {
+                {recentScans.length > 0 ? (
+                  recentScans.map((item) => {
                     const dateFormatted = new Date(item.created_at || Date.now()).toLocaleDateString(
                       'en-US',
                       { month: 'short', day: 'numeric' }

@@ -69,7 +69,6 @@ export const ScanHistoryScreen: React.FC = () => {
   const [scans, setScans] = useState<DiagnosisResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Compute initials for the doctor avatar
@@ -117,30 +116,12 @@ export const ScanHistoryScreen: React.FC = () => {
     loadData();
   };
 
-  // Filter scans by search query
-  const filteredScans = useMemo(() => {
-    if (!searchQuery.trim()) return scans;
-    const query = searchQuery.toLowerCase();
-    return scans.filter(
-      (s) =>
-        s.label_ar?.toLowerCase().includes(query) ||
-        s.predicted_label?.toLowerCase().includes(query) ||
-        s.patient_id_code?.toLowerCase().includes(query) ||
-        s.id?.toString().includes(query)
-    );
-  }, [scans, searchQuery]);
-
-  // Reset page to 1 when search query changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
-
   // Client-side pagination calculations
-  const totalPages = Math.ceil(filteredScans.length / pageSize) || 1;
+  const totalPages = Math.ceil(scans.length / pageSize) || 1;
   const paginatedScans = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filteredScans.slice(start, start + pageSize);
-  }, [filteredScans, currentPage, pageSize]);
+    return scans.slice(start, start + pageSize);
+  }, [scans, currentPage, pageSize]);
 
   const renderBadge = (item: DiagnosisResult) => {
     const isHigh = item.is_malignant || item.risk_level === 'high' || item.risk_level === 'critical';
@@ -254,27 +235,8 @@ export const ScanHistoryScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={styles.headerRightGroup}>
-          {/* Global Search Bar */}
-          <View style={styles.headerSearch}>
-            <Feather name="search" size={15} color="#94A3B8" style={styles.searchIcon} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by diagnosis, English term, or ID..."
-              placeholderTextColor="#94A3B8"
-              style={[
-                styles.searchInput,
-                Platform.OS === 'web' && ({ outlineStyle: 'none', outline: 'none' } as any),
-              ]}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Feather name="x" size={14} color="#94A3B8" />
-              </TouchableOpacity>
-            )}
-          </View>
 
+        <View style={styles.headerRightGroup}>
           {/* Initials Avatar */}
           <TouchableOpacity
             style={styles.avatarWrapper}
@@ -299,7 +261,7 @@ export const ScanHistoryScreen: React.FC = () => {
           <View style={styles.pageTitleRow}>
             <Text style={styles.pageTitle}>Clinical Scan History</Text>
             <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{filteredScans.length} Scans</Text>
+              <Text style={styles.countBadgeText}>{scans.length} Scans</Text>
             </View>
           </View>
           <Text style={styles.pageSubtitle}>
@@ -321,10 +283,10 @@ export const ScanHistoryScreen: React.FC = () => {
   );
 
   const renderPagination = () => {
-    if (filteredScans.length <= pageSize) return null;
+    if (scans.length <= pageSize) return null;
 
     const startItem = (currentPage - 1) * pageSize + 1;
-    const endItem = Math.min(currentPage * pageSize, filteredScans.length);
+    const endItem = Math.min(currentPage * pageSize, scans.length);
 
     // Build page number list
     const pages = [];
@@ -335,7 +297,7 @@ export const ScanHistoryScreen: React.FC = () => {
     return (
       <View style={styles.paginationContainer}>
         <Text style={styles.paginationInfoText}>
-          Showing {startItem}–{endItem} of {filteredScans.length} clinical evaluations
+          Showing {startItem}–{endItem} of {scans.length} clinical evaluations
         </Text>
 
         <View style={styles.paginationButtons}>
@@ -405,9 +367,7 @@ export const ScanHistoryScreen: React.FC = () => {
               </View>
               <Text style={styles.emptyTitle}>No Clinical Scans Found</Text>
               <Text style={styles.emptySubtitle}>
-                {searchQuery
-                  ? `No records match your filter query "${searchQuery}".`
-                  : 'No dermoscopic scans have been recorded in this account yet. Start an AI analysis using your USB microscope or upload from gallery.'}
+                No dermoscopic scans have been recorded in this account yet. Start an AI analysis using your USB microscope or upload from gallery.
               </Text>
               <TouchableOpacity
                 style={styles.emptyCtaBtn}
