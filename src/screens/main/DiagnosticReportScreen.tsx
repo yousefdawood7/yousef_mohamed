@@ -117,17 +117,6 @@ export const DiagnosticReportScreen: React.FC = () => {
     }
   };
 
-  const handleExportPDF = () => {
-    Alert.alert('Export Report', 'Generating and exporting HIPAA-compliant clinical PDF report...');
-  };
-
-  const handleShareReport = () => {
-    Alert.alert('Share Case', 'Sharing case record with consulting dermatologist...');
-  };
-
-  const handlePrintReport = () => {
-    Alert.alert('Print Report', 'Sending document to wireless medical printer...');
-  };
 
   if (loading && !diagnosis) {
     return (
@@ -225,21 +214,7 @@ export const DiagnosticReportScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Action Stubs */}
-        <View style={styles.headerRightGroup}>
-          <TouchableOpacity style={styles.iconBtn} onPress={handlePrintReport} activeOpacity={0.7}>
-            <Feather name="printer" size={17} color="#475569" />
-          </TouchableOpacity>
 
-          <TouchableOpacity style={styles.iconBtn} onPress={handleShareReport} activeOpacity={0.7}>
-            <Feather name="share-2" size={17} color="#475569" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.exportBtn} onPress={handleExportPDF} activeOpacity={0.8}>
-            <Feather name="download" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.exportBtnText}>Export PDF</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
