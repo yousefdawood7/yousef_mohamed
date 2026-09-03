@@ -10,12 +10,15 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { ScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { diagnosesApi, DiagnosisResult } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_FILTERS = [
   { label: 'All Scans', value: 'ALL' },
@@ -26,27 +29,49 @@ const STATUS_FILTERS = [
 
 export const ScanHistoryScreen: React.FC = () => {
   const navigation = useNavigation<ScanNavProp<'ScanHistory'>>();
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
   const isTablet = width >= 800;
   const numColumns = isTablet ? 3 : 1;
+  const pageSize = isTablet ? 9 : 6;
 
   const [scans, setScans] = useState<DiagnosisResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Compute initials for the doctor avatar
+  const initials = user?.name
+    ? user.name
+        .trim()
+        .split(/\s+/)
+        .map((p) => p[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : 'YD';
 
   const loadData = async (status = selectedStatus) => {
     setLoading(true);
     try {
       const response = await diagnosesApi.getHistory({
-        per_page: 30,
+        per_page: 50,
         status: status === 'ALL' ? undefined : status,
       });
-      setScans(response.data || []);
+
+      // Handle both flat array and paginated object structure
+      let list: DiagnosisResult[] = [];
+      if (Array.isArray(response)) {
+        list = response;
+      } else if (response && Array.isArray((response as any).data)) {
+        list = (response as any).data;
+      }
+
+      setScans(list);
     } catch (e) {
-      console.warn('Failed to load scan history from backend:', e);
-      // Fallback empty if backend offline
+      console.warn('[ScanHistoryScreen] Failed to load scan history:', e);
       setScans([]);
     } finally {
       setLoading(false);
@@ -56,6 +81,7 @@ export const ScanHistoryScreen: React.FC = () => {
 
   useEffect(() => {
     loadData(selectedStatus);
+    setCurrentPage(1);
   }, [selectedStatus]);
 
   const onRefresh = () => {
@@ -63,6 +89,7 @@ export const ScanHistoryScreen: React.FC = () => {
     loadData(selectedStatus);
   };
 
+  // Filter scans by search query
   const filteredScans = useMemo(() => {
     if (!searchQuery.trim()) return scans;
     const query = searchQuery.toLowerCase();
@@ -71,9 +98,21 @@ export const ScanHistoryScreen: React.FC = () => {
         s.label_ar?.toLowerCase().includes(query) ||
         s.predicted_label?.toLowerCase().includes(query) ||
         s.patient_id_code?.toLowerCase().includes(query) ||
-        s.id.toString().includes(query)
+        s.id?.toString().includes(query)
     );
   }, [scans, searchQuery]);
+
+  // Reset page to 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  // Client-side pagination calculations
+  const totalPages = Math.ceil(filteredScans.length / pageSize) || 1;
+  const paginatedScans = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredScans.slice(start, start + pageSize);
+  }, [filteredScans, currentPage, pageSize]);
 
   const renderBadge = (item: DiagnosisResult) => {
     const isHigh = item.is_malignant || item.risk_level === 'high' || item.risk_level === 'critical';
@@ -86,7 +125,7 @@ export const ScanHistoryScreen: React.FC = () => {
       <View style={[styles.badgeOverlay, { backgroundColor: bg }]}>
         <View style={[styles.badgeDot, { backgroundColor: dotColor }]} />
         <Text style={[styles.badgeText, { color: textColor }]}>
-          {item.risk_level_label || (isHigh ? 'High Risk' : 'Low Risk')}
+          {item.risk_level_label || (isHigh ? 'High Risk' : isMod ? 'Moderate' : 'Low Risk')}
         </Text>
       </View>
     );
@@ -98,7 +137,12 @@ export const ScanHistoryScreen: React.FC = () => {
         ? { uri: item.image_url }
         : require('../../../assets/images/last_scan_result.png');
 
-    const confidenceNumeric = item.confidence > 1 ? item.confidence : item.confidence * 100;
+    const confidenceNumeric =
+      typeof item.confidence === 'number'
+        ? item.confidence > 1
+          ? item.confidence
+          : item.confidence * 100
+        : 0;
 
     return (
       <TouchableOpacity
@@ -107,13 +151,13 @@ export const ScanHistoryScreen: React.FC = () => {
         onPress={() =>
           navigation.navigate('DiagnosticReport', {
             scanId: item.id.toString(),
-            title: `${item.label_ar} (${item.predicted_label})`,
+            title: `${item.label_ar || ''} (${item.predicted_label || ''})`,
             diagnosisData: item,
             imageUri: item.image_url,
           })
         }
       >
-        {/* Top Image & Status Badge */}
+        {/* Image & Status Badge */}
         <View style={styles.cardImageContainer}>
           <Image source={imgSource} style={styles.cardImage} resizeMode="cover" />
           {renderBadge(item)}
@@ -123,9 +167,9 @@ export const ScanHistoryScreen: React.FC = () => {
         <View style={styles.cardBody}>
           <View style={styles.cardHeaderRow}>
             <View style={styles.idTitleGroup}>
-              <Text style={styles.cardIdText}>{item.patient_id_code || `SCAN #${item.id}`}</Text>
+              <Text style={styles.cardIdText}>{item.patient_id_code || `CASE #${item.id}`}</Text>
               <Text style={styles.cardTitleText} numberOfLines={1}>
-                {item.label_ar || item.predicted_label}
+                {item.label_ar || item.predicted_label || 'Unclassified Lesion'}
               </Text>
             </View>
             <View style={styles.confidenceGroup}>
@@ -142,8 +186,8 @@ export const ScanHistoryScreen: React.FC = () => {
               style={[
                 styles.progressFill,
                 {
-                  width: `${confidenceNumeric}%`,
-                  backgroundColor: item.is_malignant ? '#DC2626' : '#00629E',
+                  width: `${Math.min(100, Math.max(0, confidenceNumeric))}%`,
+                  backgroundColor: item.is_malignant ? '#DC2626' : '#0284C7',
                 },
               ]}
             />
@@ -152,7 +196,7 @@ export const ScanHistoryScreen: React.FC = () => {
           {/* Card Footer */}
           <View style={styles.cardFooter}>
             <View style={styles.dateGroup}>
-              <Feather name="calendar" size={13} color={colors.slateMuted} />
+              <Feather name="calendar" size={13} color="#94A3B8" />
               <Text style={styles.dateText}>
                 {new Date(item.created_at || Date.now()).toLocaleDateString('en-US', {
                   month: 'short',
@@ -162,19 +206,9 @@ export const ScanHistoryScreen: React.FC = () => {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.viewReportBtn}
-              onPress={() =>
-                navigation.navigate('DiagnosticReport', {
-                  scanId: item.id.toString(),
-                  title: `${item.label_ar} (${item.predicted_label})`,
-                  diagnosisData: item,
-                  imageUri: item.image_url,
-                })
-              }
-            >
-              <Text style={styles.viewReportText}>VIEW REPORT</Text>
-            </TouchableOpacity>
+            <View style={styles.viewReportBtn}>
+              <Text style={styles.viewReportText}>INSPECT REPORT →</Text>
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -183,7 +217,7 @@ export const ScanHistoryScreen: React.FC = () => {
 
   const renderListHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Top App Bar Search & Identity */}
+      {/* 1. TOP APP BAR (Logo, Search, Refresh, Avatar) */}
       <View style={styles.topBarRow}>
         <View style={styles.brandRow}>
           <Image
@@ -191,81 +225,208 @@ export const ScanHistoryScreen: React.FC = () => {
             style={styles.headerLogo}
             resizeMode="contain"
           />
-          <Text style={styles.brandTitle}>DR  HAKEEM</Text>
+          <View>
+            <Text style={styles.brandTitle}>DR. HAKEEM</Text>
+            <Text style={styles.brandSubtitle}>Clinical Dermatology AI Suite</Text>
+          </View>
         </View>
 
-        <View style={styles.headerSearch}>
-          <Feather name="search" size={16} color={colors.slateMuted} style={styles.searchIcon} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search by Arabic name, English label, or patient ID..."
-            placeholderTextColor="#6B7280"
-            style={styles.searchInput}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Feather name="x" size={16} color={colors.slateMuted} />
-            </TouchableOpacity>
-          )}
+        <View style={styles.headerRightGroup}>
+          {/* Global Search Bar */}
+          <View style={styles.headerSearch}>
+            <Feather name="search" size={15} color="#94A3B8" style={styles.searchIcon} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search by diagnosis, English term, or ID..."
+              placeholderTextColor="#94A3B8"
+              style={[
+                styles.searchInput,
+                Platform.OS === 'web' && ({ outlineStyle: 'none', outline: 'none' } as any),
+              ]}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Feather name="x" size={14} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Refresh Button */}
+          <TouchableOpacity
+            style={styles.iconCircleBtn}
+            onPress={onRefresh}
+            activeOpacity={0.7}
+          >
+            <Feather
+              name="refresh-cw"
+              size={16}
+              color={refreshing ? colors.primary : '#475569'}
+            />
+          </TouchableOpacity>
+
+          {/* Initials Avatar */}
+          <TouchableOpacity
+            style={styles.avatarWrapper}
+            onPress={() => navigation.navigate('ProfileTab' as any)}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={['#7A04BB', '#04ADC2']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarCircle}
+            >
+              <Text style={styles.avatarInitialsText}>{initials}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Hero Title & Filter Chips */}
+      {/* 2. PAGE TITLE & STATUS CONTROLS */}
       <View style={styles.titleSection}>
-        <View>
-          <Text style={styles.pageTitle}>Clinical Scan History</Text>
+        <View style={styles.titleLeft}>
+          <View style={styles.pageTitleRow}>
+            <Text style={styles.pageTitle}>Clinical Scan History</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{filteredScans.length} Scans</Text>
+            </View>
+          </View>
           <Text style={styles.pageSubtitle}>
             Comprehensive longitudinal dermoscopic records and AI diagnostic classifications.
           </Text>
         </View>
 
-        {/* Status Filter Chips */}
-        <View style={styles.filterChipsRow}>
-          {STATUS_FILTERS.map((f) => {
-            const isSelected = selectedStatus === f.value;
-            return (
-              <TouchableOpacity
-                key={f.value}
-                style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-                onPress={() => setSelectedStatus(f.value)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        {/* Filter Chips + New Scan Button */}
+        <View style={styles.actionsRow}>
+          <View style={styles.filterChipsRow}>
+            {STATUS_FILTERS.map((f) => {
+              const isSelected = selectedStatus === f.value;
+              return (
+                <TouchableOpacity
+                  key={f.value}
+                  style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                  onPress={() => setSelectedStatus(f.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={styles.newScanBtn}
+            onPress={() => navigation.navigate('NewScanTab' as any)}
+            activeOpacity={0.85}
+          >
+            <Feather name="plus-circle" size={15} color="#FFFFFF" />
+            <Text style={styles.newScanBtnText}>New Scan</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
   );
+
+  const renderPagination = () => {
+    if (filteredScans.length <= pageSize) return null;
+
+    const startItem = (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, filteredScans.length);
+
+    // Build page number list
+    const pages = [];
+    for (let p = 1; p <= totalPages; p++) {
+      pages.push(p);
+    }
+
+    return (
+      <View style={styles.paginationContainer}>
+        <Text style={styles.paginationInfoText}>
+          Showing {startItem}–{endItem} of {filteredScans.length} clinical evaluations
+        </Text>
+
+        <View style={styles.paginationButtons}>
+          <TouchableOpacity
+            style={[styles.pageBtn, currentPage === 1 && styles.pageBtnDisabled]}
+            disabled={currentPage === 1}
+            onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          >
+            <Feather name="chevron-left" size={16} color={currentPage === 1 ? '#CBD5E1' : '#1E293B'} />
+            <Text style={[styles.pageBtnText, currentPage === 1 && styles.pageBtnTextDisabled]}>
+              Previous
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.pageNumbersRow}>
+            {pages.map((p) => {
+              const isActive = p === currentPage;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.pageNumberBtn, isActive && styles.pageNumberBtnActive]}
+                  onPress={() => setCurrentPage(p)}
+                >
+                  <Text style={[styles.pageNumberText, isActive && styles.pageNumberTextActive]}>
+                    {p}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.pageBtn, currentPage === totalPages && styles.pageBtnDisabled]}
+            disabled={currentPage === totalPages}
+            onPress={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+          >
+            <Text style={[styles.pageBtnText, currentPage === totalPages && styles.pageBtnTextDisabled]}>
+              Next
+            </Text>
+            <Feather name="chevron-right" size={16} color={currentPage === totalPages ? '#CBD5E1' : '#1E293B'} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
       {loading && !refreshing ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Fetching scan history from server...</Text>
+          <Text style={styles.loadingText}>Fetching scan history from database...</Text>
         </View>
       ) : (
         <FlatList
           key={numColumns}
-          data={filteredScans}
+          data={paginatedScans}
           keyExtractor={(item) => item.id.toString()}
           numColumns={numColumns}
           renderItem={renderScanCard}
           ListHeaderComponent={renderListHeader}
+          ListFooterComponent={renderPagination}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Feather name="inbox" size={40} color="#94A3B8" />
+              <View style={styles.emptyIconCircle}>
+                <Feather name="folder" size={36} color="#0284C7" />
+              </View>
               <Text style={styles.emptyTitle}>No Clinical Scans Found</Text>
               <Text style={styles.emptySubtitle}>
                 {searchQuery
-                  ? 'No records match your search filter.'
-                  : 'Start a new scan with your USB digital microscope to record diagnoses.'}
+                  ? `No records match your filter query "${searchQuery}".`
+                  : 'No dermoscopic scans have been recorded in this account yet. Start an AI analysis using your USB microscope or upload from gallery.'}
               </Text>
+              <TouchableOpacity
+                style={styles.emptyCtaBtn}
+                onPress={() => navigation.navigate('NewScanTab' as any)}
+                activeOpacity={0.85}
+              >
+                <Feather name="camera" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.emptyCtaText}>Launch First AI Scan</Text>
+              </TouchableOpacity>
             </View>
           }
           contentContainerStyle={styles.listContent}
@@ -281,28 +442,30 @@ export const ScanHistoryScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#F8FAFC',
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#F8FAFC',
   },
   loadingText: {
     marginTop: 14,
     fontSize: 14,
-    color: '#475569',
+    color: '#64748B',
     fontWeight: '500',
   },
   listContent: {
     paddingHorizontal: 28,
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
   columnWrapper: {
     gap: 20,
     marginBottom: 20,
   },
+
+  // 1. Top App Bar & Header
   headerContainer: {
     paddingTop: 18,
     paddingBottom: 24,
@@ -316,37 +479,42 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 14,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
   headerLogo: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
+    marginRight: 10,
   },
   brandTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#00629E',
-    letterSpacing: 1.5,
+    color: '#0F172A',
+    letterSpacing: 0.8,
+  },
+  brandSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  headerRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   headerSearch: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
     borderRadius: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     height: 40,
-    width: '50%',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    minWidth: 260,
   },
   searchIcon: {
     marginRight: 8,
@@ -354,8 +522,38 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 13,
-    color: '#131B2E',
+    color: '#0F172A',
   },
+  iconCircleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#E0E7FF',
+  },
+  avatarCircle: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // 2. Title & Filters Section
   titleSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -363,15 +561,41 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 16,
   },
+  titleLeft: {
+    gap: 4,
+  },
+  pageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   pageTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#131B2E',
+    color: '#0F172A',
+  },
+  countBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284C7',
   },
   pageSubtitle: {
     fontSize: 13,
     color: '#64748B',
-    marginTop: 4,
+    maxWidth: 600,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   filterChipsRow: {
     flexDirection: 'row',
@@ -380,42 +604,55 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingVertical: 7,
     paddingHorizontal: 14,
-    borderRadius: 9999,
+    borderRadius: 8,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   filterChipSelected: {
-    backgroundColor: '#00629E',
-    borderColor: '#00629E',
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
   },
   filterChipText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#475569',
   },
   filterChipTextSelected: {
     color: '#FFFFFF',
   },
+  newScanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  newScanBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // 3. Scan Cards
   card: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
-    marginBottom: 16,
   },
   cardTablet: {
-    flex: 1,
-    marginBottom: 0,
+    maxWidth: '32%',
   },
   cardImageContainer: {
-    height: 180,
     position: 'relative',
-    backgroundColor: '#0F172A',
+    width: '100%',
+    height: 180,
+    backgroundColor: '#F1F5F9',
   },
   cardImage: {
     width: '100%',
@@ -430,7 +667,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 4,
     paddingHorizontal: 10,
-    borderRadius: 9999,
+    borderRadius: 6,
   },
   badgeDot: {
     width: 6,
@@ -440,31 +677,32 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   cardBody: {
-    padding: 18,
-    gap: 12,
+    padding: 16,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: 10,
   },
   idTitleGroup: {
     flex: 1,
-    marginRight: 10,
+    marginRight: 8,
   },
   cardIdText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#707882',
+    color: '#0284C7',
     letterSpacing: 0.5,
+    marginBottom: 2,
   },
   cardTitleText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#131B2E',
-    marginTop: 2,
+    color: '#0F172A',
   },
   confidenceGroup: {
     alignItems: 'flex-end',
@@ -472,12 +710,12 @@ const styles = StyleSheet.create({
   confidenceValueText: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#00629E',
+    color: '#0F172A',
   },
   confidenceLabelText: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#707882',
+    color: '#94A3B8',
     letterSpacing: 0.5,
   },
   progressTrack: {
@@ -485,6 +723,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 3,
     overflow: 'hidden',
+    marginBottom: 14,
   },
   progressFill: {
     height: '100%',
@@ -506,6 +745,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 12,
     color: '#64748B',
+    fontWeight: '500',
   },
   viewReportBtn: {
     paddingVertical: 4,
@@ -514,23 +754,125 @@ const styles = StyleSheet.create({
   viewReportText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#00629E',
+    color: '#0284C7',
+    letterSpacing: 0.5,
   },
-  emptyContainer: {
-    paddingVertical: 60,
+
+  // 4. Pagination
+  paginationContainer: {
+    marginTop: 24,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  paginationInfoText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  paginationButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  pageBtnDisabled: {
+    opacity: 0.5,
+  },
+  pageBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  pageBtnTextDisabled: {
+    color: '#94A3B8',
+  },
+  pageNumbersRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  pageNumberBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyTitle: {
-    fontSize: 17,
+  pageNumberBtnActive: {
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
+  },
+  pageNumberText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  pageNumberTextActive: {
+    color: '#FFFFFF',
     fontWeight: '700',
-    color: '#131B2E',
-    marginTop: 12,
+  },
+
+  // 5. Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
+    paddingHorizontal: 24,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F0F9FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 13,
     color: '#64748B',
-    marginTop: 4,
     textAlign: 'center',
+    maxWidth: 460,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  emptyCtaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  emptyCtaText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
