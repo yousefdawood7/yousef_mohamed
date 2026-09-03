@@ -19,6 +19,7 @@ import { ScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { diagnosesApi, DiagnosisResult } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { getInitials } from '../../utils/formatters';
 
 interface CardImageProps {
   imageUrl?: string;
@@ -71,16 +72,8 @@ export const ScanHistoryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Compute initials for the doctor avatar
-  const initials = user?.name
-    ? user.name
-        .trim()
-        .split(/\s+/)
-        .map((p) => p[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    : 'YD';
+  // Compute initials for the doctor avatar (Arabic: "س م", English: "YD")
+  const initials = getInitials(user?.name);
 
   const loadData = async () => {
     setLoading(true);

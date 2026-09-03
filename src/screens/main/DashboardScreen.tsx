@@ -20,6 +20,7 @@ import { MainTabParamList } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { dashboardApi, diagnosesApi, DashboardStats, DiagnosisResult } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { getInitials } from '../../utils/formatters';
 
 export const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
@@ -180,11 +181,7 @@ export const DashboardScreen: React.FC = () => {
               end={{ x: 1, y: 1 }}
               style={styles.avatarGradient}
             >
-              <Text style={styles.avatarInitialsText}>
-                {user?.name
-                  ? user.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
-                  : 'DH'}
-              </Text>
+              <Text style={styles.avatarInitialsText}>{getInitials(user?.name)}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

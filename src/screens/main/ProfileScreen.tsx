@@ -18,6 +18,7 @@ import { ProfileNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { patientApi, dashboardApi, PatientProfileData, DashboardStats } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { getInitials } from '../../utils/formatters';
 
 interface ProfileScreenProps {
   onSignOut?: () => void;
@@ -94,14 +95,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
   const userEmail = user?.email || profile?.user?.email || 'yousefdawood31@gmail.com';
   const patientCode = profile?.patient_code || 'PAT-QCIWL3';
 
-  // Compute clean Google-style 2-letter uppercase initials
-  const initials = userName
-    .trim()
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'YD';
+  // Compute clean Google-style initials (Arabic: "س م", English: "YD")
+  const initials = getInitials(userName);
 
   if (loading && !profile) {
     return (
