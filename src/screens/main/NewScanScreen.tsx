@@ -140,7 +140,7 @@ export const NewScanScreen: React.FC = () => {
 
     try {
       if (Platform.OS === 'web') {
-        // Web Capture using Canvas
+        // Web Capture using Canvas if active webcam stream exists
         if (webVideoRef.current && webStreamActive) {
           const video = webVideoRef.current;
           const canvas = document.createElement('canvas');
@@ -154,10 +154,11 @@ export const NewScanScreen: React.FC = () => {
           } else {
             throw new Error('Canvas 2D context unavailable.');
           }
-        } else if (cameraRef.current) {
-          const photo = await cameraRef.current.takePictureAsync({ quality: 0.88 });
-          if (photo?.uri) setCapturedUri(photo.uri);
+        } else {
+          // If no webcam stream is available on Web, trigger file picker smoothly
+          handlePickFromGallery();
         }
+        return;
       } else if (source === 'uvc') {
         // Android USB Microscope UVC Capture
         if (!hasUvcPermission) {
