@@ -12,7 +12,6 @@ import { AuthNavigationProp } from '../../types/navigation';
 import { AuthLayout } from '../../components/AuthLayout';
 import { FormInput } from '../../components/FormInput';
 import { GradientButton } from '../../components/GradientButton';
-import { GoogleButton } from '../../components/GoogleButton';
 import { colors } from '../../theme/colors';
 import { authApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -53,18 +52,6 @@ export const SignInScreen: React.FC = () => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      await login('salma.mohamed@example.com', 'Password123!');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Google Sign In failed';
-      Alert.alert('Error', msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <AuthLayout
       bgImageSource={require('../../../assets/images/signin_bg.png')}
@@ -79,20 +66,6 @@ export const SignInScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Sign in to access your clinical dashboard.</Text>
-      </View>
-
-      {/* Google Sign In */}
-      <GoogleButton
-        title="Continue with Google"
-        onPress={handleGoogleSignIn}
-        style={styles.googleBtn}
-      />
-
-      {/* Divider */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or continue with email</Text>
-        <View style={styles.dividerLine} />
       </View>
 
       {/* Form Fields */}

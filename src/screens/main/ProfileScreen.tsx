@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -90,21 +91,33 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
     }
   };
 
-  const handleSignOutPress = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of Dr. Hakeem?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          if (onSignOut) {
-            onSignOut();
-          } else {
-            await signOut();
-          }
+  const handleSignOutPress = async () => {
+    const doSignOut = async () => {
+      try {
+        await signOut();
+        if (onSignOut) {
+          onSignOut();
+        }
+      } catch (err) {
+        console.warn('Sign out error:', err);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' ? window.confirm('Are you sure you want to sign out of Dr. Hakeem?') : true;
+      if (confirmed) {
+        await doSignOut();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out of Dr. Hakeem?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: doSignOut,
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const userName = user?.name || profile?.user?.name || 'سلمى محمد';

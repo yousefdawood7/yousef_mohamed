@@ -29,38 +29,10 @@ export const apiClient = axios.create({
   timeout: 90000, // 90s timeout for AI PyTorch model inference & Grad-CAM
 });
 
-// Request Interceptor: Attach Sanctum Bearer Token (with seamless test session resolution)
+// Request Interceptor: Attach Sanctum Bearer Token
 apiClient.interceptors.request.use(
   async (config) => {
-    let token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
-
-    // If no token exists and requesting a protected endpoint, auto-resolve auth session
-    const isAuthRoute =
-      config.url?.includes('/auth/login') ||
-      config.url?.includes('/auth/register') ||
-      config.url?.includes('/ai/info');
-
-    if (!token && !isAuthRoute) {
-      try {
-        const res = await axios.post(
-          `${getApiBaseUrl()}/auth/login`,
-          { email: 'salma.mohamed@example.com', password: 'Password123!' },
-          { headers: { Accept: 'application/json' }, timeout: 8000 }
-        );
-        token = res.data?.data?.token;
-        if (token) {
-          await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
-          if (res.data?.data?.user) {
-            await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data.data.user));
-          }
-        }
-      } catch (err) {
-        // Fallback default token from verified login
-        token = '2|waYUT3CSfkAoELMPDHxi04pQALC6Ay6Hbok6jdAr7442e052';
-        await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
-      }
-    }
-
+    const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

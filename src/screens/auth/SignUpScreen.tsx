@@ -12,7 +12,6 @@ import { AuthNavigationProp } from '../../types/navigation';
 import { AuthLayout } from '../../components/AuthLayout';
 import { FormInput } from '../../components/FormInput';
 import { GradientButton } from '../../components/GradientButton';
-import { GoogleButton } from '../../components/GoogleButton';
 import { colors } from '../../theme/colors';
 import { authApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -67,23 +66,6 @@ export const SignUpScreen: React.FC = () => {
     }
   };
 
-  const handleGoogleSignUp = async () => {
-    setLoading(true);
-    try {
-      await register(
-        'سلمى محمد',
-        'salma.mohamed@example.com',
-        'Password123!',
-        'Password123!'
-      );
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Google Sign Up failed';
-      Alert.alert('Error', msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <AuthLayout
       bgImageSource={require('../../../assets/images/signup_bg.png')}
@@ -98,20 +80,6 @@ export const SignUpScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.title}>Create your account</Text>
         <Text style={styles.subtitle}>Start leveraging AI diagnostics today.</Text>
-      </View>
-
-      {/* Google Sign Up Button */}
-      <GoogleButton
-        title="Sign up with Google"
-        onPress={handleGoogleSignUp}
-        style={styles.googleBtn}
-      />
-
-      {/* Divider */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or continue with email</Text>
-        <View style={styles.dividerLine} />
       </View>
 
       {/* Form Fields */}
