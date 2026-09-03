@@ -238,16 +238,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
 
                 <View style={styles.metricCard}>
                   <Text style={[styles.metricNumber, { color: '#059669' }]}>
-                    {stats?.accuracy_metrics?.average_confidence_percentage &&
-                    stats.accuracy_metrics.average_confidence_percentage !== '0%'
-                      ? stats.accuracy_metrics.average_confidence_percentage
-                      : '98.4%'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Model Validation Accuracy</Text>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <Text style={[styles.metricNumber, { color: '#4F46E5' }]}>
                     {stats?.completed_scans !== undefined ? stats.completed_scans : 0}
                   </Text>
                   <Text style={styles.metricLabel}>Verified Completed Scans</Text>
