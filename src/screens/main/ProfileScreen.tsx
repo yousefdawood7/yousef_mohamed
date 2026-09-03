@@ -148,7 +148,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
                   >
                     <Text style={styles.avatarInitialsText}>{initials}</Text>
                   </LinearGradient>
-                  <View style={styles.onlineBadge} />
                 </View>
 
                 <Text style={styles.doctorName}>{userName}</Text>
