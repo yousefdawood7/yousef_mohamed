@@ -286,11 +286,37 @@ export const NewScanScreen: React.FC = () => {
     setCapturedUri(null);
   };
 
-  const toggleSource = () => {
-    if (!devices.uvc) {
-      Alert.alert('No Microscope Detected', 'Plug in a USB digital microscope to enable UVC mode.');
+  const toggleSource = async () => {
+    if (Platform.OS !== 'android') {
+      Alert.alert(
+        'USB Microscope Mode',
+        'Direct hardware UVC microscope streaming is supported on Android devices via OTG USB-C.\n\nOn PC / Web, use the Gallery button to select your dermoscopic skin images.'
+      );
       return;
     }
+
+    if (!devices.uvc) {
+      Alert.alert(
+        'USB Microscope Not Detected',
+        'Please check the following steps to connect your digital dermatoscope:\n\n' +
+          '1. Enable OTG Connection:\n' +
+          'On many Android phones (Samsung, Xiaomi, Oppo, Realme, Vivo, OnePlus), go to Android Settings > search for "OTG" and turn ON "OTG connection". This is required to supply power to the microscope lights.\n\n' +
+          '2. Standalone APK Required:\n' +
+          'Native hardware USB drivers require the installed APK (they cannot run inside Expo Go or mobile web browsers).\n\n' +
+          '3. Connect Cable:\n' +
+          'Plug the USB-C OTG adapter firmly into your phone. When prompted by Android, tap "Allow Dr. Hakeem to access this USB device".'
+      );
+      return;
+    }
+
+    if (!hasUvcPermission) {
+      const granted = await requestUvcPermission();
+      if (granted) {
+        selectSource('uvc');
+      }
+      return;
+    }
+
     const nextSource = source === 'uvc' ? 'builtin' : 'uvc';
     selectSource(nextSource);
   };
@@ -543,31 +569,29 @@ export const NewScanScreen: React.FC = () => {
                       <Text style={styles.toolBtnLabel}>Gallery</Text>
                     </TouchableOpacity>
 
-                    {/* Source Toggle (Microscope vs Built-in) - Shown when UVC device attached on Android */}
-                    {devices.uvc && (
-                      <TouchableOpacity
+                    {/* Source Toggle (Microscope vs Built-in) */}
+                    <TouchableOpacity
+                      style={[
+                        styles.toolBtn,
+                        source === 'uvc' && styles.toolBtnActiveMicroscope,
+                      ]}
+                      onPress={toggleSource}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name={source === 'uvc' ? 'microscope' : 'camera-outline'}
+                        size={22}
+                        color={source === 'uvc' ? '#7A04BB' : '#334155'}
+                      />
+                      <Text
                         style={[
-                          styles.toolBtn,
-                          source === 'uvc' && styles.toolBtnActiveMicroscope,
+                          styles.toolBtnLabel,
+                          source === 'uvc' && { color: '#7A04BB', fontWeight: '700' },
                         ]}
-                        onPress={toggleSource}
-                        activeOpacity={0.7}
                       >
-                        <MaterialCommunityIcons
-                          name={source === 'uvc' ? 'microscope' : 'camera-flip-outline'}
-                          size={22}
-                          color={source === 'uvc' ? '#7A04BB' : '#334155'}
-                        />
-                        <Text
-                          style={[
-                            styles.toolBtnLabel,
-                            source === 'uvc' && { color: '#7A04BB', fontWeight: '700' },
-                          ]}
-                        >
-                          {source === 'uvc' ? 'Microscope' : 'Built-in'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                        {source === 'uvc' ? 'Microscope' : 'Camera'}
+                      </Text>
+                    </TouchableOpacity>
 
                     {/* Shutter Button */}
                     <TouchableOpacity
