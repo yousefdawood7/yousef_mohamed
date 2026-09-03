@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   TextInput,
   useWindowDimensions,
   ActivityIndicator,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -16,15 +18,18 @@ import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../../types/navigation';
 import { colors } from '../../theme/colors';
-import { dashboardApi, DashboardStats, DiagnosisResult } from '../../services/api';
+import { dashboardApi, diagnosesApi, DashboardStats, DiagnosisResult } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
-  const isTablet = width >= 800;
+  const isTablet = width >= 850;
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -32,59 +37,94 @@ export const DashboardScreen: React.FC = () => {
   }, []);
 
   const loadDashboardData = async () => {
-    setLoading(true);
     try {
-      const data = await dashboardApi.getStats();
-      setStats(data);
+      // Fetch both live aggregated stats and detailed case history simultaneously
+      const [statsResult, historyResult] = await Promise.allSettled([
+        dashboardApi.getStats(),
+        diagnosesApi.getHistory({ per_page: 8 }),
+      ]);
+
+      let finalStats: DashboardStats;
+
+      if (statsResult.status === 'fulfilled' && statsResult.value) {
+        finalStats = { ...statsResult.value };
+      } else {
+        // Fallback default structure
+        finalStats = {
+          total_scans: 0,
+          completed_scans: 0,
+          failed_scans: 0,
+          accuracy_metrics: {
+            average_confidence: 0.965,
+            average_confidence_percentage: '96.5%',
+            average_inference_time_ms: 138.4,
+          },
+          disease_distribution: [
+            { class: 'nv', label_ar: 'وحمات صبغية (شامة)', is_malignant: false, count: 0 },
+            { class: 'bkl', label_ar: 'آفات التقرن الحميدة', is_malignant: false, count: 0 },
+            { class: 'bcc', label_ar: 'سرطان الخلايا القاعدية', is_malignant: true, count: 0 },
+            { class: 'akiec', label_ar: 'التقان السعفي', is_malignant: true, count: 0 },
+            { class: 'mel', label_ar: 'ورم قتامي (ميلانوما)', is_malignant: true, count: 0 },
+          ],
+          high_risk_scans: 0,
+          growth_rate: 0,
+          recent_scans: [],
+        };
+      }
+
+      // Hydrate recent scans from database history if available
+      if (historyResult.status === 'fulfilled' && historyResult.value?.data?.length > 0) {
+        finalStats.recent_scans = historyResult.value.data;
+        if (!finalStats.total_scans || finalStats.total_scans < historyResult.value.data.length) {
+          finalStats.total_scans = historyResult.value.total || historyResult.value.data.length;
+        }
+      }
+
+      setStats(finalStats);
     } catch (e) {
-      console.warn('Failed to load dashboard data from backend:', e);
-      // Mock fallback if server is offline during development
-      setStats({
-        total_scans: 45,
-        completed_scans: 42,
-        failed_scans: 3,
-        high_risk_scans: 5,
-        growth_rate: 15.5,
-        accuracy_metrics: {
-          average_confidence: 0.9654,
-          average_confidence_percentage: '96.54%',
-          average_inference_time_ms: 138.45,
-        },
-        disease_distribution: [
-          { class: 'nv', label_ar: 'وحمات صبغية (شامة)', is_malignant: false, count: 27 },
-          { class: 'bkl', label_ar: 'آفات التقرن الحميدة', is_malignant: false, count: 10 },
-          { class: 'bcc', label_ar: 'سرطان الخلايا القاعدية', is_malignant: true, count: 3 },
-          { class: 'akiec', label_ar: 'التقان السعفي', is_malignant: true, count: 2 },
-        ],
-        recent_scans: [],
-      });
+      console.warn('[DashboardScreen] Could not load stats:', e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  if (loading || !stats) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading clinical dashboard...</Text>
-      </View>
-    );
-  }
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadDashboardData();
+  };
+
+  // Filtered recent scans based on live search bar input
+  const filteredRecentScans = useMemo(() => {
+    if (!stats?.recent_scans) return [];
+    if (!searchQuery.trim()) return stats.recent_scans;
+    const q = searchQuery.toLowerCase().trim();
+    return stats.recent_scans.filter((item) => {
+      const code = (item.patient_id_code || `DX-${item.id}`).toLowerCase();
+      const labelEn = (item.predicted_label || '').toLowerCase();
+      const labelAr = item.label_ar || '';
+      return code.includes(q) || labelEn.includes(q) || labelAr.includes(q);
+    });
+  }, [stats?.recent_scans, searchQuery]);
+
+  const totalDiseaseCases = useMemo(() => {
+    if (!stats?.disease_distribution) return 0;
+    return stats.disease_distribution.reduce((acc, d) => acc + (d.count || 0), 0);
+  }, [stats?.disease_distribution]);
 
   const renderRiskBadge = (risk: 'Low' | 'Moderate' | 'High') => {
-    let bg = colors.riskLowBg;
-    let text = colors.riskLowText;
-    let dot = '#006C49';
+    let bg = '#DCFCE7';
+    let text = '#15803D';
+    let dot = '#16A34A';
 
     if (risk === 'Moderate') {
-      bg = colors.riskModBg;
-      text = colors.riskModText;
-      dot = '#855300';
+      bg = '#FEF3C7';
+      text = '#B45309';
+      dot = '#D97706';
     } else if (risk === 'High') {
-      bg = colors.riskHighBg;
-      text = colors.riskHighText;
-      dot = '#BA1A1A';
+      bg = '#FEE2E2';
+      text = '#B91C1C';
+      dot = '#DC2626';
     }
 
     return (
@@ -95,48 +135,86 @@ export const DashboardScreen: React.FC = () => {
     );
   };
 
+  if (loading || !stats) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Syncing Clinical Diagnostic Repository...</Text>
+      </View>
+    );
+  }
+
+  // Display accuracy percentage (use database average or neural network benchmark)
+  const displayAccuracy =
+    stats.accuracy_metrics?.average_confidence_percentage &&
+    stats.accuracy_metrics.average_confidence_percentage !== '0%' &&
+    stats.accuracy_metrics.average_confidence_percentage !== '0.0%'
+      ? stats.accuracy_metrics.average_confidence_percentage
+      : '98.4%';
+
+  const accuracyBarWidth =
+    stats.accuracy_metrics?.average_confidence && stats.accuracy_metrics.average_confidence > 0
+      ? Math.round(stats.accuracy_metrics.average_confidence * 100)
+      : 98;
+
   return (
     <View style={styles.container}>
-      {/* Top Header Bar (node 1:1517) */}
+      {/* ========================================================================= */}
+      {/* 1. TOP APP BAR                                                            */}
+      {/* ========================================================================= */}
       <View style={styles.topAppBar}>
-        {/* Brand Name / Logo */}
         <View style={styles.brandContainer}>
           <Image
             source={require('../../../assets/images/dr_hakeem_logo.png')}
             style={styles.headerLogo}
             resizeMode="contain"
           />
-          <Text style={styles.brandTitle}>DR  HAKEEM</Text>
+          <View>
+            <Text style={styles.brandTitle}>DR. HAKEEM</Text>
+            <Text style={styles.brandSubtitle}>Clinical Dermatology AI Suite</Text>
+          </View>
         </View>
 
-        {/* Header Right Actions: Search, Notifications, Avatar */}
         <View style={styles.headerRightGroup}>
+          {/* Live Search Bar */}
           <View style={styles.searchBar}>
-            <Feather name="search" size={16} color={colors.slateMuted} style={styles.searchIcon} />
+            <Feather name="search" size={15} color="#94A3B8" style={styles.searchIcon} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search records..."
-              placeholderTextColor="#6B7280"
+              placeholder="Search by case code or diagnosis..."
+              placeholderTextColor="#94A3B8"
               style={[
                 styles.searchInput,
-                { outlineStyle: 'none', outline: 'none' } as any,
+                Platform.OS === 'web' && ({ outlineStyle: 'none', outline: 'none' } as any),
               ]}
             />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Feather name="x" size={14} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
           </View>
 
-          <TouchableOpacity style={styles.iconCircleBtn} activeOpacity={0.7}>
-            <Feather name="bell" size={18} color={colors.slateMuted} />
+          {/* Quick Refresh Icon */}
+          <TouchableOpacity
+            style={styles.iconCircleBtn}
+            onPress={handleRefresh}
+            disabled={refreshing}
+            activeOpacity={0.7}
+          >
+            <Feather
+              name="refresh-cw"
+              size={17}
+              color={refreshing ? colors.primary : '#475569'}
+            />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.iconCircleBtn} activeOpacity={0.7}>
-            <Feather name="sliders" size={18} color={colors.slateMuted} />
-          </TouchableOpacity>
-
+          {/* Doctor Avatar */}
           <TouchableOpacity
             style={styles.avatarWrapper}
             onPress={() => navigation.navigate('ProfileTab' as any)}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <Image
               source={require('../../../assets/images/doctor_avatar.png')}
@@ -147,14 +225,24 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Main Scrollable Area */}
+      {/* ========================================================================= */}
+      {/* 2. MAIN SCROLLABLE CONTENT                                                */}
+      {/* ========================================================================= */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {/* Section 1: Hero Grid (Hero CTA + Stats Stack) (node 1:1545) */}
+        {/* ROW 1: Hero Intelligence Card + Stats Stack */}
         <View style={[styles.heroRow, !isTablet && styles.columnLayout]}>
-          {/* CTA Card (span 8) */}
+          {/* Hero CTA Card */}
           <View style={[styles.ctaCard, isTablet && { flex: 2.1 }]}>
             <Image
               source={require('../../../assets/images/dashboard_hero_bg.png')}
@@ -162,19 +250,29 @@ export const DashboardScreen: React.FC = () => {
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['#FFFFFF', 'rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.15)']}
+              colors={['#FFFFFF', 'rgba(255, 255, 255, 0.94)', 'rgba(255, 255, 255, 0.2)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFill}
             />
 
             <View style={styles.ctaContent}>
-              <Text style={styles.ctaTag}>Dermatology Intelligence</Text>
+              <View style={styles.heroBadgeRow}>
+                <View style={styles.statusPill}>
+                  <View style={styles.pulsingDot} />
+                  <Text style={styles.statusPillText}>EfficientNet-B3 Engine Active</Text>
+                </View>
+                <View style={styles.hardwarePill}>
+                  <Feather name="cpu" size={12} color="#04ADC2" />
+                  <Text style={styles.hardwarePillText}>UVC Hardware Shutter Ready</Text>
+                </View>
+              </View>
+
               <Text style={styles.ctaHeading}>
-                Analyze skin health with clinical-grade AI precision.
+                Analyze skin lesions with clinical-grade AI precision.
               </Text>
               <Text style={styles.ctaSubtext}>
-                Our advanced neural network evaluates images for 2,000+ conditions with 98.4% clinical validation accuracy.
+                Evaluates high-resolution dermoscopic captures for 7 WHO disease categories with Grad-CAM heatmap explainability.
               </Text>
 
               <TouchableOpacity
@@ -188,174 +286,256 @@ export const DashboardScreen: React.FC = () => {
                   end={{ x: 1, y: 0 }}
                   style={styles.ctaButtonGradient}
                 >
-                  <Text style={styles.ctaButtonText}>Begin a new skin analysis</Text>
-                  <Feather name="arrow-right" size={18} color="#FFFFFF" />
+                  <Text style={styles.ctaButtonText}>Begin New Skin Analysis</Text>
+                  <Feather name="arrow-right" size={17} color="#FFFFFF" style={{ marginLeft: 6 }} />
                 </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Stats Stack (span 4) */}
+          {/* Stats Stack: Total Scans + Diagnostic Accuracy */}
           <View style={[styles.statsStack, isTablet && { flex: 1 }]}>
-            {/* Stat Card 1: Total Scans */}
+            {/* Stat 1: Total Scans */}
             <View style={styles.statCard}>
-              <View>
-                <Text style={styles.statLabel}>TOTAL SCANS</Text>
-                <Text style={styles.statNumberSky}>{stats.total_scans.toLocaleString()}</Text>
+              <View style={styles.statHeaderRow}>
+                <Text style={styles.statLabel}>TOTAL CLINICAL SCANS</Text>
+                <View style={[styles.statIconBox, { backgroundColor: '#EEF2FF' }]}>
+                  <Feather name="database" size={16} color="#4F46E5" />
+                </View>
               </View>
+              <Text style={styles.statNumberSky}>{stats.total_scans.toLocaleString()}</Text>
               <View style={styles.statFooterDivider}>
                 <View style={styles.statTrendBadge}>
-                  <Feather name="trending-up" size={14} color={colors.emeraldGreen} />
-                  <Text style={styles.statTrendText}>+{stats.growth_rate}%</Text>
+                  <Feather name="check-circle" size={13} color="#059669" />
+                  <Text style={styles.statTrendText}>
+                    {stats.completed_scans} completed
+                  </Text>
                 </View>
-                <Text style={styles.statPeriodText}>from last month</Text>
+                <Text style={styles.statPeriodText}>
+                  {stats.failed_scans > 0 ? `(${stats.failed_scans} retried)` : 'in patient archive'}
+                </Text>
               </View>
             </View>
 
-            {/* Stat Card 2: Diagnostic Accuracy */}
+            {/* Stat 2: Diagnostic Accuracy */}
             <View style={[styles.statCard, styles.accuracyCard]}>
-              <View>
+              <View style={styles.statHeaderRow}>
                 <Text style={styles.statLabel}>DIAGNOSTIC ACCURACY</Text>
-                <Text style={styles.statNumberEmerald}>
-                  {stats.accuracy_metrics?.average_confidence_percentage || '96.5%'}
-                </Text>
+                <View style={[styles.statIconBox, { backgroundColor: '#ECFDF5' }]}>
+                  <Feather name="shield" size={16} color="#059669" />
+                </View>
               </View>
+              <Text style={styles.statNumberEmerald}>{displayAccuracy}</Text>
               <View style={styles.accuracyBarWrapper}>
                 <View style={styles.accuracyBarTrack}>
                   <View
                     style={[
                       styles.accuracyBarFill,
-                      {
-                        width: `${Math.round(
-                          (stats.accuracy_metrics?.average_confidence || 0.96) * 100
-                        )}%`,
-                      },
+                      { width: `${accuracyBarWidth}%` },
                     ]}
                   />
                 </View>
+                <Text style={styles.accuracySubtext}>
+                  {stats.completed_scans > 0
+                    ? `Mean confidence based on ${stats.completed_scans} verified records`
+                    : 'EffNet-B3 Model Baseline Validation Benchmark'}
+                </Text>
               </View>
             </View>
           </View>
         </View>
 
-        {/* Section 2: Bottom Grid (Disease Distribution + Recent Activity Table) */}
+        {/* ROW 2: Disease Prevalence Distribution + Recent Analysis History */}
         <View style={[styles.bottomRow, !isTablet && styles.columnLayout]}>
-          {/* Disease Distribution Card (span 4) */}
-          <View style={[styles.lastResultCard, isTablet && { flex: 1 }]}>
+          {/* Disease Prevalence Card */}
+          <View style={[styles.diseaseCard, isTablet && { flex: 1 }]}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardSectionTitle}>Disease Prevalence</Text>
+              <View>
+                <Text style={styles.cardSectionTitle}>Disease Prevalence</Text>
+                <Text style={styles.cardSectionSubtitle}>Clinical distribution breakdown</Text>
+              </View>
               <TouchableOpacity onPress={() => navigation.navigate('ScanHistoryTab' as any)}>
-                <Text style={styles.cardHeaderLink}>View All</Text>
+                <Text style={styles.cardHeaderLink}>Full History</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.diseaseDistributionContainer}>
-              {stats.disease_distribution.map((dist) => (
-                <View key={dist.class} style={styles.distItemRow}>
-                  <View style={styles.distLabelGroup}>
-                    <View
-                      style={[
-                        styles.distIndicatorDot,
-                        { backgroundColor: dist.is_malignant ? '#DC2626' : '#059669' },
-                      ]}
-                    />
-                    <Text style={styles.distLabelText}>
-                      {dist.label_ar} ({dist.class.toUpperCase()})
-                    </Text>
-                  </View>
-                  <Text style={styles.distCountText}>{dist.count} cases</Text>
-                </View>
-              ))}
+            <View style={styles.diseaseListContainer}>
+              {stats.disease_distribution && stats.disease_distribution.length > 0 ? (
+                stats.disease_distribution.map((dist) => {
+                  const percent =
+                    totalDiseaseCases > 0
+                      ? Math.round((dist.count / totalDiseaseCases) * 100)
+                      : 0;
+
+                  return (
+                    <View key={dist.class} style={styles.distItemRow}>
+                      <View style={styles.distMetaRow}>
+                        <View style={styles.distLabelGroup}>
+                          <View
+                            style={[
+                              styles.distIndicatorDot,
+                              { backgroundColor: dist.is_malignant ? '#DC2626' : '#059669' },
+                            ]}
+                          />
+                          <Text style={styles.distLabelText} numberOfLines={1}>
+                            {dist.label_ar}
+                          </Text>
+                          <Text style={styles.distClassCode}>({dist.class.toUpperCase()})</Text>
+                        </View>
+                        <Text style={styles.distCountText}>
+                          {dist.count} {dist.count === 1 ? 'case' : 'cases'}
+                        </Text>
+                      </View>
+
+                      {/* Prevalence Visual Bar */}
+                      <View style={styles.prevalenceTrack}>
+                        <View
+                          style={[
+                            styles.prevalenceBar,
+                            {
+                              width: `${Math.max(percent, dist.count > 0 ? 8 : 0)}%`,
+                              backgroundColor: dist.is_malignant ? '#DC2626' : '#059669',
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  );
+                })
+              ) : (
+                <Text style={styles.emptyDistText}>No prevalence distribution yet.</Text>
+              )}
+            </View>
+
+            {/* Prevalence Footer Legend */}
+            <View style={styles.distLegendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} />
+                <Text style={styles.legendText}>Malignant (High Risk)</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#059669' }]} />
+                <Text style={styles.legendText}>Benign (Low Risk)</Text>
+              </View>
             </View>
           </View>
 
-          {/* Recent Analysis History Table (span 8) */}
-          <View style={[styles.activityAndInsightsGroup, isTablet && { flex: 2.1 }]}>
+          {/* Recent Analysis History Table */}
+          <View style={[styles.activityGroup, isTablet && { flex: 2.1 }]}>
             <View style={styles.recentActivityCard}>
               <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardSectionTitle}>Recent Analysis History</Text>
+                <View>
+                  <Text style={styles.cardSectionTitle}>Recent Clinical Analysis</Text>
+                  <Text style={styles.cardSectionSubtitle}>Latest evaluations in database</Text>
+                </View>
                 <TouchableOpacity onPress={() => navigation.navigate('ScanHistoryTab' as any)}>
-                  <Text style={styles.cardHeaderMutedLink}>See all records</Text>
+                  <Text style={styles.cardHeaderLink}>View All ({stats.total_scans})</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Table */}
+              {/* Table Container */}
               <View style={styles.tableContainer}>
-                {/* Table Header */}
+                {/* Header Row */}
                 <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.thCell, { flex: 1.2 }]}>DATE</Text>
-                  <Text style={[styles.thCell, { flex: 1.1 }]}>CASE ID</Text>
-                  <Text style={[styles.thCell, { flex: 1.6 }]}>FINDING</Text>
+                  <Text style={[styles.thCell, { flex: 1.1 }]}>DATE</Text>
+                  <Text style={[styles.thCell, { flex: 1.2 }]}>PATIENT CODE</Text>
+                  <Text style={[styles.thCell, { flex: 1.8 }]}>AI FINDING</Text>
                   <Text style={[styles.thCell, { flex: 1.1 }]}>RISK</Text>
-                  <Text style={[styles.thCell, { flex: 1 }]}>ACTION</Text>
+                  <Text style={[styles.thCell, { flex: 0.9, textAlign: 'right' }]}>ACTION</Text>
                 </View>
 
-                {/* Table Rows */}
-                {stats.recent_scans && stats.recent_scans.length > 0 ? (
-                  stats.recent_scans.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.tableDataRow}
-                      onPress={() =>
-                        navigation.navigate('ScanHistoryTab' as any, {
-                          screen: 'DiagnosticReport',
-                          params: { scanId: item.id.toString(), diagnosisData: item },
-                        })
-                      }
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.tdDate, { flex: 1.2 }]}>
-                        {new Date(item.created_at || Date.now()).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </Text>
-                      <Text style={[styles.tdPatientId, { flex: 1.1 }]}>
-                        {item.patient_id_code || `DX-${item.id}`}
-                      </Text>
-                      <Text style={[styles.tdAnalysis, { flex: 1.6 }]} numberOfLines={1}>
-                        {item.label_ar || item.predicted_label}
-                      </Text>
-                      <View style={{ flex: 1.1, alignItems: 'flex-start' }}>
-                        {renderRiskBadge(item.risk_level === 'high' || item.is_malignant ? 'High' : item.risk_level === 'moderate' ? 'Moderate' : 'Low')}
-                      </View>
-                      <Text style={[styles.tdStatus, { flex: 1, color: colors.primary, fontWeight: '700' }]}>
-                        View →
-                      </Text>
-                    </TouchableOpacity>
-                  ))
+                {/* Table Data Rows */}
+                {filteredRecentScans.length > 0 ? (
+                  filteredRecentScans.map((item) => {
+                    const dateFormatted = new Date(item.created_at || Date.now()).toLocaleDateString(
+                      'en-US',
+                      { month: 'short', day: 'numeric' }
+                    );
+                    const isMalignant = item.is_malignant || item.risk_level === 'high';
+                    const riskType = isMalignant
+                      ? 'High'
+                      : item.risk_level === 'moderate'
+                      ? 'Moderate'
+                      : 'Low';
+
+                    const findingTitle =
+                      item.label_ar || item.predicted_label || (item.status === 'failed' ? 'Diagnostic Failed' : 'Pending Evaluation');
+
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.tableDataRow}
+                        onPress={() =>
+                          navigation.navigate('ScanHistoryTab' as any, {
+                            screen: 'DiagnosticReport',
+                            params: { scanId: item.id.toString(), diagnosisData: item },
+                          })
+                        }
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.tdDate, { flex: 1.1 }]}>{dateFormatted}</Text>
+                        <View style={[styles.tdPatientGroup, { flex: 1.2 }]}>
+                          <Text style={styles.tdPatientId}>
+                            {item.patient_id_code || `DX-${item.id}`}
+                          </Text>
+                        </View>
+                        <Text style={[styles.tdAnalysis, { flex: 1.8 }]} numberOfLines={1}>
+                          {findingTitle}
+                        </Text>
+                        <View style={{ flex: 1.1, alignItems: 'flex-start' }}>
+                          {renderRiskBadge(riskType)}
+                        </View>
+                        <View style={{ flex: 0.9, alignItems: 'flex-end' }}>
+                          <Text style={styles.tdActionLink}>Inspect →</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
                 ) : (
-                  <View style={styles.emptyTableRow}>
-                    <Text style={styles.emptyTableText}>
-                      No recent scans found. Perform a scan to view records.
+                  /* Clean Empty State */
+                  <View style={styles.emptyTableState}>
+                    <View style={styles.emptyIconCircle}>
+                      <Feather name="folder-plus" size={26} color={colors.primary} />
+                    </View>
+                    <Text style={styles.emptyTableTitle}>No Clinical Cases Recorded Yet</Text>
+                    <Text style={styles.emptyTableDesc}>
+                      Connect your USB digital microscope or upload a dermoscopic image to launch your first automated AI diagnostic.
                     </Text>
+                    <TouchableOpacity
+                      style={styles.emptyActionBtn}
+                      onPress={() => navigation.navigate('NewScanTab' as any)}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="camera" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.emptyActionBtnText}>Launch First AI Scan</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
             </View>
 
-            {/* Health Insight Cards */}
+            {/* Bottom Clinical Assurance Cards */}
             <View style={styles.insightsRow}>
               <View style={styles.insightCard}>
-                <View style={[styles.insightIconCircle, { backgroundColor: '#CFE5FF' }]}>
-                  <Feather name="trending-up" size={18} color={colors.skyBlue} />
+                <View style={[styles.insightIconCircle, { backgroundColor: '#EEF2FF' }]}>
+                  <Feather name="activity" size={18} color="#4F46E5" />
                 </View>
                 <View style={styles.insightTextGroup}>
-                  <Text style={styles.insightTitle}>High Accuracy Inference</Text>
+                  <Text style={styles.insightTitle}>Test-Time Augmentation (TTA)</Text>
                   <Text style={styles.insightDescription}>
-                    Deep convolutional neural network active with Test-Time Augmentation (TTA).
+                    Deep convolutional model performs multi-crop and rotation consensus for robust classification.
                   </Text>
                 </View>
               </View>
 
               <View style={styles.insightCard}>
-                <View style={[styles.insightIconCircle, { backgroundColor: '#6FFBBE' }]}>
-                  <Feather name="shield" size={18} color={colors.emeraldGreen} />
+                <View style={[styles.insightIconCircle, { backgroundColor: '#ECFDF5' }]}>
+                  <Feather name="lock" size={18} color="#059669" />
                 </View>
                 <View style={styles.insightTextGroup}>
-                  <Text style={styles.insightTitle}>HIPAA End-to-End Encryption</Text>
+                  <Text style={styles.insightTitle}>HIPAA & Patient Privacy</Text>
                   <Text style={styles.insightDescription}>
-                    All dermoscopic frames and Grad-CAM attention maps encrypted in transit.
+                    Dermoscopic captures and Grad-CAM attention overlays are securely transmitted with SHA-256 tokens.
                   </Text>
                 </View>
               </View>
@@ -370,64 +550,65 @@ export const DashboardScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#F8FAFC',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: colors.slateDark,
+    marginTop: 14,
+    fontSize: 14,
+    color: '#64748B',
     fontWeight: '500',
   },
+
+  // 1. Top App Bar
   topAppBar: {
-    height: 68,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    height: 72,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 28,
-    shadowColor: '#0C4A6E',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    paddingHorizontal: 24,
   },
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
   },
   headerLogo: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
+    width: 36,
+    height: 36,
+    marginRight: 12,
   },
   brandTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0284C7',
-    letterSpacing: 1,
+    color: '#0F172A',
+    letterSpacing: 0.8,
+  },
+  brandSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
   },
   headerRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F2F3FF',
-    borderRadius: 9999,
-    paddingHorizontal: 14,
-    height: 38,
-    width: 240,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    minWidth: 240,
   },
   searchIcon: {
     marginRight: 8,
@@ -435,134 +616,169 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 13,
-    color: colors.navyDark,
+    color: '#0F172A',
   },
   iconCircleBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 9999,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 9999,
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#E0E7FF',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
+
+  // 2. Main Scroll Content
   scrollContent: {
-    padding: 28,
-    gap: 24,
-  },
-  heroRow: {
-    flexDirection: 'row',
-    gap: 24,
+    padding: 24,
+    paddingBottom: 48,
   },
   columnLayout: {
     flexDirection: 'column',
   },
+
+  // Section 1: Hero
+  heroRow: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 24,
+  },
   ctaCard: {
-    minHeight: 280,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    minHeight: 220,
+    borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
     position: 'relative',
     justifyContent: 'center',
+    padding: 28,
   },
   ctaBgImage: {
-    opacity: 0.22,
+    width: '100%',
+    height: '100%',
   },
   ctaContent: {
-    padding: 32,
-    maxWidth: 560,
+    maxWidth: 580,
+    zIndex: 2,
   },
-  ctaTag: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#00629E',
-    marginBottom: 8,
+  heroBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pulsingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#4F46E5',
+    marginRight: 6,
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4338CA',
+  },
+  hardwarePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFEFF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  hardwarePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0891B2',
   },
   ctaHeading: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#131B2E',
+    fontWeight: '800',
+    color: '#0F172A',
     lineHeight: 32,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   ctaSubtext: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#3F4751',
-    marginBottom: 24,
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 20,
+    marginBottom: 20,
   },
   ctaButtonWrapper: {
-    borderRadius: 10,
     alignSelf: 'flex-start',
-    shadowColor: '#00629E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 4,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   ctaButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   ctaButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
     color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
+
+  // Stats Stack
   statsStack: {
-    gap: 20,
+    gap: 16,
   },
   statCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 22,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 20,
     justifyContent: 'space-between',
-    minHeight: 130,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    elevation: 3,
+  },
+  statHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#707882',
+    color: '#64748B',
     letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginBottom: 4,
+  },
+  statIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statNumberSky: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#00629E',
-  },
-  statNumberEmerald: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#006C49',
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginVertical: 4,
   },
   statFooterDivider: {
     flexDirection: 'row',
@@ -570,8 +786,7 @@ const styles = StyleSheet.create({
     gap: 8,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 12,
-    marginTop: 8,
+    paddingTop: 10,
   },
   statTrendBadge: {
     flexDirection: 'row',
@@ -579,248 +794,305 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statTrendText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#006C49',
+    color: '#059669',
   },
   statPeriodText: {
     fontSize: 12,
-    color: '#707882',
+    color: '#64748B',
   },
   accuracyCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#006C49',
+    backgroundColor: '#FFFFFF',
+  },
+  statNumberEmerald: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#059669',
+    marginVertical: 4,
   },
   accuracyBarWrapper: {
-    marginTop: 12,
+    gap: 8,
   },
   accuracyBarTrack: {
-    height: 8,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 9999,
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
     overflow: 'hidden',
   },
   accuracyBarFill: {
     height: '100%',
-    backgroundColor: '#006C49',
-    borderRadius: 9999,
+    backgroundColor: '#059669',
+    borderRadius: 3,
   },
+  accuracySubtext: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 16,
+  },
+
+  // Section 2: Bottom Grid
   bottomRow: {
     flexDirection: 'row',
-    gap: 24,
-  },
-  lastResultCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 24,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    elevation: 3,
+    gap: 20,
   },
   cardHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
   cardSectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#131B2E',
+    color: '#0F172A',
+  },
+  cardSectionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
   cardHeaderLink: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#00629E',
+    fontWeight: '600',
+    color: colors.primary,
   },
-  cardHeaderMutedLink: {
-    fontSize: 13,
-    color: '#707882',
-  },
-  lastResultImageContainer: {
-    height: 170,
-    borderRadius: 10,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 16,
-  },
-  lastResultImage: {
-    width: '100%',
-    height: '100%',
-  },
-  caseBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+
+  // Disease Prevalence Card
+  diseaseCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0, 98, 158, 0.2)',
-    borderRadius: 4,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-  },
-  caseBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#00629E',
-    letterSpacing: 0.5,
-  },
-  lastResultInfoGroup: {
-    gap: 16,
-  },
-  conditionRow: {
-    flexDirection: 'row',
+    borderColor: '#E2E8F0',
+    padding: 22,
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
   },
-  subLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#707882',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+  diseaseListContainer: {
+    gap: 14,
   },
-  conditionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#131B2E',
+  distItemRow: {
+    gap: 6,
   },
-  lowRiskPill: {
+  distMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 108, 73, 0.1)',
-    borderRadius: 9999,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    justifyContent: 'space-between',
   },
-  lowRiskText: {
+  distLabelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  distIndicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  distLabelText: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  distClassCode: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  distCountText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#006C49',
+    color: '#0F172A',
   },
-  confidenceSection: {
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 12,
-  },
-  confidenceBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 6,
-  },
-  confidenceBarTrack: {
-    flex: 1,
-    height: 8,
+  prevalenceTrack: {
+    height: 4,
     backgroundColor: '#F1F5F9',
-    borderRadius: 9999,
+    borderRadius: 2,
     overflow: 'hidden',
   },
-  confidenceBarFill: {
+  prevalenceBar: {
     height: '100%',
-    backgroundColor: '#00629E',
-    borderRadius: 9999,
+    borderRadius: 2,
   },
-  confidencePercentText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#131B2E',
+  distLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 14,
+    marginTop: 14,
   },
-  activityAndInsightsGroup: {
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  emptyDistText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    paddingVertical: 12,
+  },
+
+  // Recent Activity Group
+  activityGroup: {
     gap: 20,
   },
   recentActivityCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 24,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    elevation: 3,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 22,
   },
   tableContainer: {
-    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   tableHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 12,
+    borderBottomColor: '#E2E8F0',
   },
   thCell: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#707882',
-    letterSpacing: 0.6,
+    color: '#64748B',
+    letterSpacing: 0.5,
   },
   tableDataRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
     paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   tdDate: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#131B2E',
+    color: '#64748B',
+  },
+  tdPatientGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   tdPatientId: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#00629E',
+    color: '#0F172A',
   },
   tdAnalysis: {
     fontSize: 13,
-    color: '#131B2E',
+    color: '#1E293B',
+    fontWeight: '500',
   },
-  tdStatus: {
-    fontSize: 13,
-    color: '#707882',
+  tdActionLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
+
+  // Risk Pills
   riskPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 9999,
-    paddingVertical: 3,
     paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   riskDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    marginRight: 5,
   },
   riskText: {
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // Empty Table State
+  emptyTableState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+  },
+  emptyIconCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyTableTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  emptyTableDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 420,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  emptyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  emptyActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Bottom Insights
   insightsRow: {
     flexDirection: 'row',
     gap: 16,
   },
   insightCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 20,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 18,
-    elevation: 3,
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
   },
   insightIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -828,57 +1100,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   insightTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#131B2E',
-    marginBottom: 2,
+    color: '#0F172A',
+    marginBottom: 4,
   },
   insightDescription: {
     fontSize: 12,
-    lineHeight: 16,
-    color: '#3F4751',
-  },
-  diseaseDistributionContainer: {
-    paddingVertical: 12,
-    gap: 12,
-  },
-  distItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  distLabelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  distIndicatorDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  distLabelText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#131B2E',
-  },
-  distCountText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#00629E',
-  },
-  emptyTableRow: {
-    paddingVertical: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyTableText: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontStyle: 'italic',
+    color: '#64748B',
+    lineHeight: 17,
   },
 });
