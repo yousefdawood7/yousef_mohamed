@@ -5,7 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useForm } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../types/navigation';
@@ -28,6 +30,7 @@ export const SignUpScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp<'SignUp'>>();
   const { register } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const {
     control,
@@ -48,6 +51,7 @@ export const SignUpScreen: React.FC = () => {
 
   const onSubmit = async (data: SignUpFormData) => {
     setLoading(true);
+    setAuthError(null);
     try {
       await register(
         data.fullName,
@@ -58,9 +62,14 @@ export const SignUpScreen: React.FC = () => {
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
+        err?.response?.data?.errors?.email?.[0] ||
+        err?.response?.data?.errors?.password?.[0] ||
         err?.message ||
         'Unable to create account. Please verify your details.';
-      Alert.alert('Registration Failed', msg);
+      setAuthError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Registration Failed', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -84,6 +93,12 @@ export const SignUpScreen: React.FC = () => {
 
       {/* Form Fields */}
       <View style={styles.formContainer}>
+        {authError ? (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-circle" size={18} color="#DC2626" style={styles.errorIcon} />
+            <Text style={styles.errorBannerText}>{authError}</Text>
+          </View>
+        ) : null}
         <FormInput
           control={control}
           name="fullName"
@@ -185,23 +200,26 @@ const styles = StyleSheet.create({
     color: colors.bodyText,
     lineHeight: 22,
   },
-  googleBtn: {
-    marginBottom: 20,
-  },
-  dividerRow: {
+  errorBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
   },
-  dividerLine: {
+  errorIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  errorBannerText: {
     flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(201, 196, 215, 0.6)',
-  },
-  dividerText: {
-    paddingHorizontal: 12,
     fontSize: 13,
-    color: colors.bodyText,
+    color: '#991B1B',
+    lineHeight: 18,
+    fontWeight: '500',
   },
   formContainer: {
     width: '100%',

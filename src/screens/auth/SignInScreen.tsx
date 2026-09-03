@@ -5,7 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useForm } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../types/navigation';
@@ -25,6 +27,7 @@ export const SignInScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp<'SignIn'>>();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const {
     control,
@@ -39,14 +42,20 @@ export const SignInScreen: React.FC = () => {
 
   const onSubmit = async (data: SignInFormData) => {
     setLoading(true);
+    setAuthError(null);
     try {
       await login(data.email, data.password);
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
+        err?.response?.data?.errors?.email?.[0] ||
+        err?.response?.data?.errors?.password?.[0] ||
         err?.message ||
-        'Unable to sign in. Please verify your credentials.';
-      Alert.alert('Sign In Error', msg);
+        'The provided credentials do not match our records. Please check your email and password.';
+      setAuthError(msg);
+      if (Platform.OS !== 'web') {
+        Alert.alert('Sign In Error', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -70,6 +79,12 @@ export const SignInScreen: React.FC = () => {
 
       {/* Form Fields */}
       <View style={styles.formContainer}>
+        {authError ? (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-circle" size={18} color="#DC2626" style={styles.errorIcon} />
+            <Text style={styles.errorBannerText}>{authError}</Text>
+          </View>
+        ) : null}
         <FormInput
           control={control}
           name="email"
@@ -149,23 +164,26 @@ const styles = StyleSheet.create({
     color: colors.bodyText,
     lineHeight: 22,
   },
-  googleBtn: {
-    marginBottom: 24,
-  },
-  dividerRow: {
+  errorBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
   },
-  dividerLine: {
+  errorIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  errorBannerText: {
     flex: 1,
-    height: 1,
-    backgroundColor: 'rgba(201, 196, 215, 0.6)',
-  },
-  dividerText: {
-    paddingHorizontal: 12,
     fontSize: 13,
-    color: colors.bodyText,
+    color: '#991B1B',
+    lineHeight: 18,
+    fontWeight: '500',
   },
   formContainer: {
     width: '100%',
