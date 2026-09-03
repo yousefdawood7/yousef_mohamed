@@ -564,7 +564,7 @@ export const DiagnosticReportScreen: React.FC = () => {
                 <View style={styles.patientInfoBox}>
                   <Text style={styles.patientBoxLabel}>SKIN PHOTOTYPE</Text>
                   <Text style={styles.patientBoxValue}>
-                    {patientProfile?.skin_type || 'Type II / III'}
+                    {patientProfile?.skin_type || 'Not recorded'}
                   </Text>
                 </View>
               </View>

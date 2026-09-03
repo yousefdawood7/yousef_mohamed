@@ -91,9 +91,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
     }
   };
 
-  const userName = user?.name || profile?.user?.name || 'Yousef Dawood';
-  const userEmail = user?.email || profile?.user?.email || 'yousefdawood31@gmail.com';
-  const patientCode = profile?.patient_code || 'PAT-QCIWL3';
+  const userName = user?.name || profile?.user?.name || 'Dr. Hakeem Practitioner';
+  const userEmail = user?.email || profile?.user?.email || 'No email recorded';
+  const patientCode = profile?.patient_code || 'CLINIC-ID';
 
   // Compute clean Google-style initials (Arabic: "س م", English: "YD")
   const initials = getInitials(userName);
@@ -182,7 +182,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
                   <View>
                     <Text style={styles.contactLabel}>PHYSIOLOGICAL PROFILE</Text>
                     <Text style={styles.contactText}>
-                      Skin Type: {profile?.skin_type || 'Type II'} • Blood Group: {profile?.blood_group || 'A+'}
+                      {profile?.skin_type && profile?.blood_group
+                        ? `Skin Type: ${profile.skin_type} • Blood Group: ${profile.blood_group}`
+                        : profile?.skin_type
+                        ? `Skin Type: ${profile.skin_type}`
+                        : profile?.blood_group
+                        ? `Blood Group: ${profile.blood_group}`
+                        : 'Not specified in medical record'}
                     </Text>
                   </View>
                 </View>
@@ -194,7 +200,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
                   <View>
                     <Text style={styles.contactLabel}>AGE / DEMOGRAPHICS</Text>
                     <Text style={styles.contactText}>
-                      {profile?.age ? `${profile.age} years old` : '34 years old'}
+                      {profile?.age ? `${profile.age} years old` : 'Not documented in record'}
                     </Text>
                   </View>
                 </View>
