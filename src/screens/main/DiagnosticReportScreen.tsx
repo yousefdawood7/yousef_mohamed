@@ -36,6 +36,7 @@ export const DiagnosticReportScreen: React.FC = () => {
   const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
   const [heatmapAlpha, setHeatmapAlpha] = useState<number>(0.45);
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('good');
+  const [imageError, setImageError] = useState<boolean>(false);
 
   useEffect(() => {
     if (!initialDiagnosisData && scanId) {
@@ -175,12 +176,28 @@ export const DiagnosticReportScreen: React.FC = () => {
     diagnosis.severity_analysis?.recommendation_en ||
     'Low risk lesion detected. Routine clinical monitoring and general skin protection are advised.';
 
-  const originalImageSource =
-    diagnosis.image_url && diagnosis.image_url.startsWith('http')
-      ? { uri: diagnosis.image_url }
-      : initialImageUri
-      ? { uri: initialImageUri }
-      : require('../../../assets/images/last_scan_result.png');
+  // Resolve scan image: prioritize fresh captured photo (initialImageUri)
+  // or clean remote URL, rewriting broken localhost:8000
+  const resolveOriginalImage = () => {
+    if (imageError) {
+      return initialImageUri ? { uri: initialImageUri } : require('../../../assets/images/last_scan_result.png');
+    }
+    if (initialImageUri && (initialImageUri.startsWith('data:') || initialImageUri.startsWith('file:') || initialImageUri.startsWith('blob:') || initialImageUri.startsWith('http'))) {
+      return { uri: initialImageUri };
+    }
+    let url = diagnosis.image_url;
+    if (url) {
+      if (url.includes('localhost')) {
+        url = url.replace(/http:\/\/localhost(:\d+)?/, 'https://magenta-stork-707380.hostingersite.com');
+      }
+      if (url.startsWith('http')) {
+        return { uri: url };
+      }
+    }
+    return require('../../../assets/images/last_scan_result.png');
+  };
+
+  const originalImageSource = resolveOriginalImage();
 
   const heatmapImageSource =
     diagnosis.heatmap_url && diagnosis.heatmap_url.startsWith('http')
@@ -269,6 +286,10 @@ export const DiagnosticReportScreen: React.FC = () => {
                   source={originalImageSource}
                   style={styles.primaryImage}
                   resizeMode="cover"
+                  onError={() => {
+                    console.warn('[DiagnosticReport] Remote image failed, switching to local fallback');
+                    setImageError(true);
+                  }}
                 />
 
                 {heatmapImageSource && showHeatmap && (

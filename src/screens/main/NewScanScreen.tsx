@@ -433,12 +433,24 @@ export const NewScanScreen: React.FC = () => {
 
                 {/* Web Camera Busy / Error Helper */}
                 {Platform.OS === 'web' && !capturedUri && webStreamError && (
-                  <View style={styles.uvcPermissionBanner}>
-                    <Ionicons name="information-circle" size={22} color="#F59E0B" />
-                    <View style={styles.uvcPermissionTextGroup}>
-                      <Text style={styles.uvcPermissionTitle}>Camera Notice</Text>
-                      <Text style={styles.uvcPermissionSubtitle}>{webStreamError}</Text>
+                  <View style={styles.webNoticeBanner}>
+                    <View style={styles.webNoticeIconCircle}>
+                      <Feather name="video-off" size={18} color="#F59E0B" />
                     </View>
+                    <View style={styles.webNoticeTextGroup}>
+                      <Text style={styles.webNoticeTitle}>Direct Microscope Feed Inactive</Text>
+                      <Text style={styles.webNoticeSubtitle}>
+                        Connect your USB digital dermatoscope, or select an image from your device using the Gallery button below.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.webNoticeBtn}
+                      onPress={handlePickFromGallery}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="upload" size={13} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.webNoticeBtnText}>Upload File</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -577,17 +589,6 @@ export const NewScanScreen: React.FC = () => {
                       </LinearGradient>
                     </TouchableOpacity>
 
-                    {/* Flip Camera */}
-                    <TouchableOpacity
-                      style={styles.toolBtn}
-                      onPress={() =>
-                        setFacing((prev) => (prev === 'back' ? 'front' : 'back'))
-                      }
-                      activeOpacity={0.7}
-                    >
-                      <Feather name="refresh-cw" size={20} color="#334155" />
-                      <Text style={styles.toolBtnLabel}>Flip</Text>
-                    </TouchableOpacity>
 
                     {/* Torch Toggle (Mobile only) */}
                     {Platform.OS !== 'web' && source === 'builtin' && (
@@ -873,6 +874,59 @@ const styles = StyleSheet.create({
     width: 1.5,
     height: 24,
     backgroundColor: 'rgba(56, 189, 248, 0.7)',
+  },
+  webNoticeBanner: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 10,
+  },
+  webNoticeIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webNoticeTextGroup: {
+    flex: 1,
+  },
+  webNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FCD34D',
+    marginBottom: 2,
+    letterSpacing: 0.2,
+  },
+  webNoticeSubtitle: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 15,
+  },
+  webNoticeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  webNoticeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   uvcPermissionBanner: {
     position: 'absolute',
