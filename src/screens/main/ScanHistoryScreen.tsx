@@ -20,12 +20,43 @@ import { colors } from '../../theme/colors';
 import { diagnosesApi, DiagnosisResult } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
-const STATUS_FILTERS = [
-  { label: 'All Scans', value: 'ALL' },
-  { label: 'Low Risk', value: 'low' },
-  { label: 'Moderate', value: 'moderate' },
-  { label: 'High Risk', value: 'high' },
-];
+interface CardImageProps {
+  imageUrl?: string;
+  isMalignant?: boolean;
+  id: string | number;
+}
+
+const CardImage: React.FC<CardImageProps> = ({ imageUrl, isMalignant, id }) => {
+  const [imageError, setImageError] = useState(false);
+  const isValidUrl = imageUrl && imageUrl.startsWith('http') && !imageUrl.includes('localhost');
+
+  if (!isValidUrl || imageError) {
+    return (
+      <View style={styles.imagePlaceholder}>
+        <LinearGradient
+          colors={['#F8FAFC', '#E2E8F0']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.placeholderIconCircle}>
+          <Ionicons name="scan-outline" size={28} color="#0284C7" />
+        </View>
+        <Text style={styles.placeholderTitle}>Archived Scan #{id}</Text>
+        <Text style={styles.placeholderSub}>Dermoscopic capture record</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={styles.cardImage}
+      resizeMode="cover"
+      onError={() => setImageError(true)}
+    />
+  );
+};
 
 export const ScanHistoryScreen: React.FC = () => {
   const navigation = useNavigation<ScanNavProp<'ScanHistory'>>();
@@ -39,7 +70,6 @@ export const ScanHistoryScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Compute initials for the doctor avatar
@@ -53,12 +83,11 @@ export const ScanHistoryScreen: React.FC = () => {
         .toUpperCase()
     : 'YD';
 
-  const loadData = async (status = selectedStatus) => {
+  const loadData = async () => {
     setLoading(true);
     try {
       const response = await diagnosesApi.getHistory({
         per_page: 50,
-        status: status === 'ALL' ? undefined : status,
       });
 
       // Handle both flat array and paginated object structure
@@ -80,13 +109,12 @@ export const ScanHistoryScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData(selectedStatus);
-    setCurrentPage(1);
-  }, [selectedStatus]);
+    loadData();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData(selectedStatus);
+    loadData();
   };
 
   // Filter scans by search query
@@ -132,11 +160,6 @@ export const ScanHistoryScreen: React.FC = () => {
   };
 
   const renderScanCard = ({ item }: { item: DiagnosisResult }) => {
-    const imgSource =
-      item.image_url && item.image_url.startsWith('http')
-        ? { uri: item.image_url }
-        : require('../../../assets/images/last_scan_result.png');
-
     const confidenceNumeric =
       typeof item.confidence === 'number'
         ? item.confidence > 1
@@ -157,9 +180,9 @@ export const ScanHistoryScreen: React.FC = () => {
           })
         }
       >
-        {/* Image & Status Badge */}
+        {/* Image / Fallback Placeholder & Status Badge */}
         <View style={styles.cardImageContainer}>
-          <Image source={imgSource} style={styles.cardImage} resizeMode="cover" />
+          <CardImage imageUrl={item.image_url} isMalignant={item.is_malignant} id={item.id} />
           {renderBadge(item)}
         </View>
 
@@ -217,7 +240,7 @@ export const ScanHistoryScreen: React.FC = () => {
 
   const renderListHeader = () => (
     <View style={styles.headerContainer}>
-      {/* 1. TOP APP BAR (Logo, Search, Refresh, Avatar) */}
+      {/* 1. TOP APP BAR (Logo, Search, Avatar) - Removed refresh button */}
       <View style={styles.topBarRow}>
         <View style={styles.brandRow}>
           <Image
@@ -252,19 +275,6 @@ export const ScanHistoryScreen: React.FC = () => {
             )}
           </View>
 
-          {/* Refresh Button */}
-          <TouchableOpacity
-            style={styles.iconCircleBtn}
-            onPress={onRefresh}
-            activeOpacity={0.7}
-          >
-            <Feather
-              name="refresh-cw"
-              size={16}
-              color={refreshing ? colors.primary : '#475569'}
-            />
-          </TouchableOpacity>
-
           {/* Initials Avatar */}
           <TouchableOpacity
             style={styles.avatarWrapper}
@@ -283,7 +293,7 @@ export const ScanHistoryScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* 2. PAGE TITLE & STATUS CONTROLS */}
+      {/* 2. PAGE TITLE & NEW SCAN ACTION - Removed filter tags */}
       <View style={styles.titleSection}>
         <View style={styles.titleLeft}>
           <View style={styles.pageTitleRow}>
@@ -297,35 +307,15 @@ export const ScanHistoryScreen: React.FC = () => {
           </Text>
         </View>
 
-        {/* Filter Chips + New Scan Button */}
-        <View style={styles.actionsRow}>
-          <View style={styles.filterChipsRow}>
-            {STATUS_FILTERS.map((f) => {
-              const isSelected = selectedStatus === f.value;
-              return (
-                <TouchableOpacity
-                  key={f.value}
-                  style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-                  onPress={() => setSelectedStatus(f.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <TouchableOpacity
-            style={styles.newScanBtn}
-            onPress={() => navigation.navigate('NewScanTab' as any)}
-            activeOpacity={0.85}
-          >
-            <Feather name="plus-circle" size={15} color="#FFFFFF" />
-            <Text style={styles.newScanBtnText}>New Scan</Text>
-          </TouchableOpacity>
-        </View>
+        {/* New Scan Button */}
+        <TouchableOpacity
+          style={styles.newScanBtn}
+          onPress={() => navigation.navigate('NewScanTab' as any)}
+          activeOpacity={0.85}
+        >
+          <Feather name="plus-circle" size={15} color="#FFFFFF" />
+          <Text style={styles.newScanBtnText}>New Scan</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -524,14 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#0F172A',
   },
-  iconCircleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   avatarWrapper: {
     width: 40,
     height: 40,
@@ -553,7 +535,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // 2. Title & Filters Section
+  // 2. Title & Action Section
   titleSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -592,42 +574,13 @@ const styles = StyleSheet.create({
     color: '#64748B',
     maxWidth: 600,
   },
-  actionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  filterChipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  filterChip: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  filterChipSelected: {
-    backgroundColor: '#0284C7',
-    borderColor: '#0284C7',
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  filterChipTextSelected: {
-    color: '#FFFFFF',
-  },
   newScanBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#4F46E5',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
     borderRadius: 8,
   },
   newScanBtnText: {
@@ -657,6 +610,37 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  placeholderIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  placeholderTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  placeholderSub: {
+    fontSize: 11,
+    color: '#64748B',
   },
   badgeOverlay: {
     position: 'absolute',
