@@ -210,17 +210,24 @@ export const DashboardScreen: React.FC = () => {
             />
           </TouchableOpacity>
 
-          {/* Doctor Avatar */}
+          {/* Doctor Initials Avatar */}
           <TouchableOpacity
             style={styles.avatarWrapper}
             onPress={() => navigation.navigate('ProfileTab' as any)}
             activeOpacity={0.85}
           >
-            <Image
-              source={require('../../../assets/images/doctor_avatar.png')}
-              style={styles.avatarImage}
-              resizeMode="cover"
-            />
+            <LinearGradient
+              colors={['#4F46E5', '#06B6D4']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarGradient}
+            >
+              <Text style={styles.avatarInitialsText}>
+                {user?.name
+                  ? user.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+                  : 'DH'}
+              </Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </View>
@@ -244,15 +251,10 @@ export const DashboardScreen: React.FC = () => {
         <View style={[styles.heroRow, !isTablet && styles.columnLayout]}>
           {/* Hero CTA Card */}
           <View style={[styles.ctaCard, isTablet && { flex: 2.1 }]}>
-            <Image
-              source={require('../../../assets/images/dashboard_hero_bg.png')}
-              style={[StyleSheet.absoluteFill, styles.ctaBgImage]}
-              resizeMode="cover"
-            />
             <LinearGradient
-              colors={['#FFFFFF', 'rgba(255, 255, 255, 0.94)', 'rgba(255, 255, 255, 0.2)']}
+              colors={['#FFFFFF', '#F8FAFC', '#EFF6FF']}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
 
@@ -633,6 +635,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#E0E7FF',
+  },
+  avatarGradient: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   avatarImage: {
     width: '100%',

@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { ProfileNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
@@ -37,7 +38,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
     authProfile?.settings?.notifications_enabled ?? true
   );
   const [darkMode, setDarkMode] = useState(authProfile?.settings?.dark_mode ?? false);
-  const [biometricSecurity, setBiometricSecurity] = useState(true);
 
   useEffect(() => {
     loadProfile();
@@ -152,11 +152,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
             <View style={styles.card}>
               <View style={styles.avatarSection}>
                 <View style={styles.avatarWrapper}>
-                  <Image
-                    source={require('../../../assets/images/doctor_avatar.png')}
-                    style={styles.avatarImage}
-                    resizeMode="cover"
-                  />
+                  <LinearGradient
+                    colors={['#7A04BB', '#04ADC2']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.avatarCircle}
+                  >
+                    <Text style={styles.avatarInitialsText}>
+                      {userName
+                        ? userName
+                            .trim()
+                            .split(/\s+/)
+                            .map((p) => p[0])
+                            .join('')
+                            .slice(0, 2)
+                            .toUpperCase()
+                        : 'YD'}
+                    </Text>
+                  </LinearGradient>
                   <View style={styles.onlineBadge} />
                 </View>
                 <Text style={styles.doctorName}>{userName}</Text>
@@ -188,37 +201,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
             {/* Clinical Conditions & Allergies Card */}
             <View style={styles.card}>
               <View style={styles.sectionHeaderRow}>
-                <Feather name="alert-triangle" size={16} color="#00629E" />
+                <Feather name="shield" size={16} color="#00629E" />
                 <Text style={styles.sectionTitle}>Medical Profile & Allergies</Text>
               </View>
 
               <View style={styles.attributesList}>
                 <View style={styles.attributeItem}>
                   <Text style={styles.attributeLabel}>DOCUMENTED CONDITIONS:</Text>
-                  <View style={styles.tagsRow}>
-                    {(profile?.conditions && profile.conditions.length > 0
-                      ? profile.conditions
-                      : ['Hypertension', 'Eczema Prone']
-                    ).map((c, i) => (
-                      <View key={i} style={styles.conditionTag}>
-                        <Text style={styles.conditionTagText}>{c}</Text>
-                      </View>
-                    ))}
-                  </View>
+                  {profile?.conditions && profile.conditions.length > 0 ? (
+                    <View style={styles.tagsRow}>
+                      {profile.conditions.map((c, i) => (
+                        <View key={i} style={styles.conditionTag}>
+                          <Text style={styles.conditionTagText}>{c}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyMedicalText}>No chronic conditions documented in clinical file</Text>
+                  )}
                 </View>
 
                 <View style={styles.attributeItem}>
                   <Text style={styles.attributeLabel}>ACTIVE ALLERGIES:</Text>
-                  <View style={styles.tagsRow}>
-                    {(profile?.active_allergies && profile.active_allergies.length > 0
-                      ? profile.active_allergies
-                      : ['Penicillin']
-                    ).map((a, i) => (
-                      <View key={i} style={styles.allergyTag}>
-                        <Text style={styles.allergyTagText}>{a}</Text>
-                      </View>
-                    ))}
-                  </View>
+                  {profile?.active_allergies && profile.active_allergies.length > 0 ? (
+                    <View style={styles.tagsRow}>
+                      {profile.active_allergies.map((a, i) => (
+                        <View key={i} style={styles.allergyTag}>
+                          <Text style={styles.allergyTagText}>{a}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.emptyMedicalText}>No known drug or skin allergies (NKDA)</Text>
+                  )}
                 </View>
               </View>
             </View>
@@ -259,14 +274,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
                   value={darkMode}
                   onValueChange={handleToggleDarkMode}
                 />
-
-                <SettingToggle
-                  icon="lock"
-                  title="Biometric Verification"
-                  subtitle="Require fingerprint or PIN when accessing patient diagnostic records."
-                  value={biometricSecurity}
-                  onValueChange={setBiometricSecurity}
-                />
               </View>
             </View>
 
@@ -280,22 +287,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onSignOut }) => {
               <View style={styles.systemInfoGrid}>
                 <View style={styles.sysInfoRow}>
                   <Text style={styles.sysInfoKey}>Inference Engine:</Text>
-                  <Text style={styles.sysInfoVal}>Dr. Hakeem Vision CNN (TTA Enabled)</Text>
+                  <Text style={styles.sysInfoVal}>EfficientNet-B3 (PyTorch + TTA consensus)</Text>
                 </View>
 
                 <View style={styles.sysInfoRow}>
                   <Text style={styles.sysInfoKey}>Explainability Mode:</Text>
-                  <Text style={styles.sysInfoVal}>Grad-CAM Heatmap Layer v2.1</Text>
+                  <Text style={styles.sysInfoVal}>Grad-CAM Attention Heatmap (α = 0.45)</Text>
                 </View>
 
                 <View style={styles.sysInfoRow}>
                   <Text style={styles.sysInfoKey}>Hardware Interface:</Text>
-                  <Text style={styles.sysInfoVal}>UVC USB Digital Microscope</Text>
+                  <Text style={styles.sysInfoVal}>UVC 2.0/3.0 USB Digital Microscope</Text>
                 </View>
 
                 <View style={styles.sysInfoRow}>
-                  <Text style={styles.sysInfoKey}>API Backend:</Text>
-                  <Text style={styles.sysInfoVal}>Laravel 13 Sanctum (Port 8000)</Text>
+                  <Text style={styles.sysInfoKey}>IoT Robot Eyes:</Text>
+                  <Text style={styles.sysInfoVal}>HiveMQ Cloud MQTT (wss://...:8884)</Text>
+                </View>
+
+                <View style={styles.sysInfoRow}>
+                  <Text style={styles.sysInfoKey}>Cloud API Host:</Text>
+                  <Text style={styles.sysInfoVal}>Hostinger SSL (Laravel 11 Sanctum)</Text>
                 </View>
               </View>
             </View>
@@ -387,12 +399,26 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 12,
   },
-  avatarImage: {
+  avatarCircle: {
     width: 90,
     height: 90,
     borderRadius: 45,
     borderWidth: 3,
     borderColor: '#EFF4FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialsText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  emptyMedicalText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    paddingVertical: 4,
   },
   onlineBadge: {
     width: 16,
