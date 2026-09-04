@@ -23,16 +23,9 @@ import { colors } from '../../theme/colors';
 import { useCameraSource } from '../../hooks/useCameraSource';
 import { diagnosesApi } from '../../services/api';
 
-// Conditionally import UVCCamera on Android
-let UVCCameraComponent: any = null;
-if (Platform.OS === 'android') {
-  try {
-    const uvcModule = require('@jaswinda/react-native-uvc-camera');
-    UVCCameraComponent = uvcModule.UVCCamera;
-  } catch (e) {
-    console.warn('[NewScanScreen] UVCCamera import failed:', e);
-  }
-}
+// UVC USB Microscope (Android). Auto-connects on mount.
+import { UvcCamera, type UvcCameraHandle, CameraErrorCodes } from '@kartik512/react-native-uvc-camera';
+const UVCCameraComponent = Platform.OS === 'android' ? UvcCamera : null;
 
 const BEST_PRACTICES_TIPS = [
   {
@@ -68,7 +61,7 @@ export const NewScanScreen: React.FC = () => {
 
   const [builtinPermission, requestBuiltinPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const uvcCameraRef = useRef<any>(null);
+  const uvcCameraRef = useRef<UvcCameraHandle | null>(null);
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // USB Microscope & Camera Source Hook (Android)
@@ -77,7 +70,6 @@ export const NewScanScreen: React.FC = () => {
     devices,
     selectSource,
     hasUvcPermission,
-    requestUvcPermission,
     uvcDevice,
   } = useCameraSource();
 
@@ -88,6 +80,14 @@ export const NewScanScreen: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [webStreamActive, setWebStreamActive] = useState<boolean>(false);
   const [webStreamError, setWebStreamError] = useState<string | null>(null);
+  // UVC (USB Microscope) connection/device info
+  const [uvcDeviceName, setUvcDeviceName] = useState<string | null>(null);
+  // When the UVC library reports that USB permission is required/denied
+  const [uvcPermissionNeeded, setUvcPermissionNeeded] = useState<boolean>(() => !hasUvcPermission);
+
+  // Runtime CAMERA permission is REQUIRED on Android 9+ before the UVC
+  // device's USB permission will be honored (otherwise "Allow" silently fails).
+  const [uvcCameraPermission, requestUvcCameraPermission] = useCameraPermissions();
 
   // Web Browser Webcam / UVC Stream Setup
   useEffect(() => {
@@ -160,29 +160,17 @@ export const NewScanScreen: React.FC = () => {
         }
         return;
       } else if (source === 'uvc') {
-        // Android USB Microscope UVC Capture
-        if (!hasUvcPermission) {
-          Alert.alert(
-            'USB Permission Required',
-            'Please grant USB access to the microscope before capturing frames.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Grant Permission', onPress: requestUvcPermission },
-            ]
-          );
-          return;
-        }
-
-        if (uvcCameraRef.current) {
-          const photo = await uvcCameraRef.current.takePhoto();
-          if (photo && photo.path) {
-            const uri = photo.path.startsWith('file://') ? photo.path : `file://${photo.path}`;
-            setCapturedUri(uri);
-          } else {
-            throw new Error('No image path returned from USB microscope.');
-          }
-        } else {
+        // Android USB Microscope UVC Capture.
+        // USB permission is requested automatically by the UVC view on mount;
+        // if capture fails, handleCameraError/catch surfaces the reason.
+        if (!uvcCameraRef.current) {
           throw new Error('USB Microscope camera is not ready.');
+        }
+        const { uri } = await uvcCameraRef.current.takePicture();
+        if (uri) {
+          setCapturedUri(uri);
+        } else {
+          throw new Error('No image returned from USB microscope.');
         }
       } else {
         // Android / Built-in Expo Camera Capture
@@ -282,27 +270,22 @@ export const NewScanScreen: React.FC = () => {
     }
   };
 
-  // Open/close UVC camera lifecycle
+  // Note: UVC camera lifecycle (open/close) is handled automatically by
+  // @kartik512/react-native-uvc-camera when the <UvcCamera> view is mounted.
+
+  // Reflect CAMERA-permission readiness whenever UVC source is active so the
+  // banner can guide the user. Without CAMERA granted on Android 9+, the OS
+  // silently auto-denies the UVC USB "Allow" request. On auto-attach (device
+  // plugged in), the view may mount before CAMERA is granted, so request it.
   useEffect(() => {
-    if (source !== 'uvc' || !hasUvcPermission || !uvcCameraRef.current) return;
-
-    const timer = setTimeout(() => {
-      try {
-        uvcCameraRef.current?.openCamera();
-      } catch (e) {
-        console.warn('[NewScanScreen] openCamera error:', e);
+    if (Platform.OS === 'android' && source === 'uvc') {
+      if (!uvcCameraPermission?.granted) {
+        requestUvcCameraPermission();
       }
-    }, 500);
-
-    return () => {
-      clearTimeout(timer);
-      try {
-        uvcCameraRef.current?.closeCamera();
-      } catch (e) {
-        console.warn('[NewScanScreen] closeCamera error:', e);
-      }
-    };
-  }, [source, hasUvcPermission]);
+      setUvcPermissionNeeded(!uvcCameraPermission?.granted);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, uvcCameraPermission?.granted]);
 
   const handleRetake = () => {
     setCapturedUri(null);
@@ -331,16 +314,31 @@ export const NewScanScreen: React.FC = () => {
       return;
     }
 
-    if (!hasUvcPermission) {
-      const granted = await requestUvcPermission();
-      if (granted) {
-        selectSource('uvc');
-      }
+    // Android 9+ requires the app to hold CAMERA runtime permission BEFORE
+    // the OS will allow UVC USB permission, otherwise the "Allow" dialog appears
+    // to do nothing. Ensure CAMERA is granted first.
+    let camGranted = !!uvcCameraPermission?.granted;
+    if (!camGranted) {
+      const res = await requestUvcCameraPermission();
+      camGranted = !!res?.granted;
+    }
+    if (!camGranted) {
+      Alert.alert(
+        'Camera Permission Required',
+        'Dr. Hakeem needs Camera permission to stream the USB microscope on this Android device.'
+      );
       return;
     }
 
-    const nextSource = source === 'uvc' ? 'builtin' : 'uvc';
-    selectSource(nextSource);
+    if (source !== 'uvc') {
+      // The @kartik512 UVC view requests USB permission automatically on mount,
+      // so we simply switch to the UVC source here.
+      setUvcPermissionNeeded(false);
+      selectSource('uvc');
+    } else {
+      selectSource('builtin');
+    }
+    return;
   };
 
   // Built-in Camera Permission Loading (Android Native)
@@ -404,7 +402,7 @@ export const NewScanScreen: React.FC = () => {
             <View style={styles.microscopePill}>
               <Ionicons name="hardware-chip-outline" size={14} color="#0284C7" />
               <Text style={styles.microscopePillText}>
-                {uvcDevice?.productName || 'USB MICROSCOPE ATTACHED'}
+                {uvcDeviceName || uvcDevice?.productName || 'USB MICROSCOPE ATTACHED'}
               </Text>
             </View>
           )}
@@ -457,6 +455,30 @@ export const NewScanScreen: React.FC = () => {
                   <UVCCameraComponent
                     ref={uvcCameraRef}
                     style={styles.cameraView}
+                    onCameraReady={(device) => {
+                      setUvcPermissionNeeded(false);
+                      setUvcDeviceName(
+                        device?.deviceName ||
+                          (device?.vendorId && device?.productId
+                            ? `USB Microscope (${device.vendorId}:${device.productId})`
+                            : null) ||
+                          null
+                      );
+                    }}
+                    onCameraError={({ code, message }) => {
+                      console.warn('[NewScanScreen] UVC error', code, message);
+                      if (code === CameraErrorCodes.PERMISSION_DENIED) {
+                        // USB permission was denied; surface it via the banner.
+                        setUvcPermissionNeeded(true);
+                      } else if (code !== CameraErrorCodes.NO_DEVICE_FOUND) {
+                        Alert.alert('USB Microscope Error', message);
+                      }
+                    }}
+                    onDeviceDisconnected={() => {
+                      console.warn('[NewScanScreen] UVC device disconnected');
+                      setUvcDeviceName(null);
+                      setUvcPermissionNeeded(true);
+                    }}
                   />
                 ) : (
                   /* Built-in Camera (Mobile) */
@@ -503,25 +525,43 @@ export const NewScanScreen: React.FC = () => {
                   </View>
                 )}
 
-                {/* Android UVC Permission Required Overlay Banner */}
-                {Platform.OS === 'android' && !capturedUri && source === 'uvc' && !hasUvcPermission && (
+                {/* Android UVC: informational banner shown while USB permission is pending/denied.
+                The USB "Allow" dialog is triggered automatically by the UVC view on mount. */}
+                {Platform.OS === 'android' && !capturedUri && source === 'uvc' && uvcPermissionNeeded && (
                   <View style={styles.uvcPermissionBanner}>
                     <View style={styles.uvcPermissionIconCircle}>
                       <Ionicons name="lock-closed" size={22} color="#FFFFFF" />
                     </View>
                     <View style={styles.uvcPermissionTextGroup}>
-                      <Text style={styles.uvcPermissionTitle}>USB Microscope Permission Required</Text>
+                      <Text style={styles.uvcPermissionTitle}>USB Microscope Connecting…</Text>
                       <Text style={styles.uvcPermissionSubtitle}>
-                        Allow Dr. Hakeem to stream high-resolution polarized dermoscopy from this USB device.
+                        Accept the Android "Allow Dr. Hakeem to access this USB device" prompt to stream live from the microscope.
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.uvcGrantButton}
-                      onPress={requestUvcPermission}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.uvcGrantButtonText}>Grant Access</Text>
-                    </TouchableOpacity>
+                    {!uvcCameraPermission?.granted ? (
+                      <TouchableOpacity
+                        style={styles.uvcGrantButton}
+                        onPress={async () => {
+                          await requestUvcCameraPermission();
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.uvcGrantButtonText}>Grant Camera</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.uvcGrantButton}
+                        onPress={() => {
+                          // Re-mount the UVC view to re-trigger the USB permission prompt.
+                          setUvcPermissionNeeded(false);
+                          selectSource('builtin');
+                          setTimeout(() => selectSource('uvc'), 100);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.uvcGrantButtonText}>Retry Connect</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
 

@@ -23,7 +23,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "./plugins/withUsbCamera.js"
+      "./plugins/withUsbCamera.js",
+      "@kartik512/react-native-uvc-camera"
     ]
   }
 }

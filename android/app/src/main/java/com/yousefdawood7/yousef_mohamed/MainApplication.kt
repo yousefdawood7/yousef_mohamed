@@ -14,7 +14,6 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
 import com.yousefdawood7.yousef_mohamed.usb.UsbDevicePackage
-import com.uvccamera.UVCCameraPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -24,7 +23,6 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(UsbDevicePackage())
-          add(UVCCameraPackage())
         }
     )
   }

@@ -11,9 +11,9 @@ importers:
       '@expo/vector-icons':
         specifier: ^15.1.1
         version: 15.1.1(expo-font@57.0.1(expo@57.0.13)(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
-      '@jaswinda/react-native-uvc-camera':
-        specifier: 0.2.8
-        version: 0.2.8(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      '@kartik512/react-native-uvc-camera':
+        specifier: 0.2.0
+        version: 0.2.0(@expo/config-plugins@57.0.8(typescript@6.0.3))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       '@react-native-async-storage/async-storage':
         specifier: ^3.1.1
         version: 3.1.1(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
@@ -606,13 +606,6 @@ packages:
     resolution: {integrity: sha512-RQgQ4uQ+pLbqXfOmieB91ejmLwvSgv9nLx6sT6sD83s7umBypgg+OIBOBbEUiJXrfpnp9j0mRhYYdzp9uqq3lA==}
     engines: {node: '>=12'}
 
-  '@jaswinda/react-native-uvc-camera@0.2.8':
-    resolution: {integrity: sha512-oBurfIxu1hh7BWB9cit4U6q9v/HYGf/7mHA0eBxorIaYRn/Jwihic1QPZEDN7RMhoDtusB6wIAUYmLMV8+fT6A==}
-    engines: {node: '>= 16.0.0'}
-    peerDependencies:
-      react: '*'
-      react-native: '*'
-
   '@jest/schemas@29.6.3':
     resolution: {integrity: sha512-mo5j5X+jIZmJQveBKeS/clAueipV7KgiX1vMgCxam1RNYiqE1w62n0/tJJnHtjW8ZHcQco5gY85jA3mi0L+nSA==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
@@ -639,6 +632,16 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@kartik512/react-native-uvc-camera@0.2.0':
+    resolution: {integrity: sha512-KTHZj6W8hvuWD9QDOI4tDogD0xZxLvzSYxzzw4uiwQ55bw3+wbCJttINNupzPdRrjIGRqQc6tt+nZq8uh5g5zw==}
+    peerDependencies:
+      '@expo/config-plugins': '>=7.0.0'
+      react: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      '@expo/config-plugins':
+        optional: true
 
   '@react-native-async-storage/async-storage@3.1.1':
     resolution: {integrity: sha512-z+PnLz1n6ECKhgoHZHkfc+dijXZEyZnNFSajbtE0NEbsJhmX8x9GlOeiMQIKX2E4DUqPSgfIh4FYBv1M49KgPQ==}
@@ -3472,11 +3475,6 @@ snapshots:
 
   '@isaacs/ttlcache@1.4.1': {}
 
-  '@jaswinda/react-native-uvc-camera@0.2.8(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
-    dependencies:
-      react: 19.2.3
-      react-native: 0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3)
-
   '@jest/schemas@29.6.3':
     dependencies:
       '@sinclair/typebox': 0.27.12
@@ -3513,6 +3511,13 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@kartik512/react-native-uvc-camera@0.2.0(@expo/config-plugins@57.0.8(typescript@6.0.3))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      react: 19.2.3
+      react-native: 0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3)
+    optionalDependencies:
+      '@expo/config-plugins': 57.0.8(typescript@6.0.3)
 
   '@react-native-async-storage/async-storage@3.1.1(react-native@0.86.2(@babel/core@7.29.7)(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
     dependencies:
