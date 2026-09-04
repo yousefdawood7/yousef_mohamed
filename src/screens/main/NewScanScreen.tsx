@@ -282,6 +282,28 @@ export const NewScanScreen: React.FC = () => {
     }
   };
 
+  // Open/close UVC camera lifecycle
+  useEffect(() => {
+    if (source !== 'uvc' || !hasUvcPermission || !uvcCameraRef.current) return;
+
+    const timer = setTimeout(() => {
+      try {
+        uvcCameraRef.current?.openCamera();
+      } catch (e) {
+        console.warn('[NewScanScreen] openCamera error:', e);
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      try {
+        uvcCameraRef.current?.closeCamera();
+      } catch (e) {
+        console.warn('[NewScanScreen] closeCamera error:', e);
+      }
+    };
+  }, [source, hasUvcPermission]);
+
   const handleRetake = () => {
     setCapturedUri(null);
   };
