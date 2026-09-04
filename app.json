@@ -3,7 +3,7 @@
     "name": "yousef_mohamed",
     "slug": "yousef_mohamed",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {

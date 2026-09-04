@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Image,
   ImageSourcePropType,
-  useWindowDimensions,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -13,6 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useOrientation } from '../hooks/useOrientation';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -33,8 +33,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   badgeDescription = 'Your patient data is secured with enterprise-grade encryption and strict clinical compliance protocols.',
   isForgotPasswordLayout = false,
 }) => {
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 768;
+  const { isTablet, isCompactLandscape } = useOrientation();
 
   return (
     <KeyboardAvoidingView
@@ -42,8 +41,9 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
       style={styles.container}
     >
       <View style={[styles.mainRow, !isTablet && styles.mainColumn]}>
-        {/* Left Column: Branding & Value Prop */}
-        <View style={[styles.leftColumn, !isTablet && styles.leftColumnCompact]}>
+        {/* Left Column: Branding & Value Prop (hidden on compact landscape to give the form room) */}
+        {!isCompactLandscape && (
+          <View style={[styles.leftColumn, !isTablet && styles.leftColumnCompact]}>
           {isForgotPasswordLayout ? (
             <LinearGradient
               colors={['#451EBB', '#00687A']}
@@ -155,11 +155,15 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
             )}
           </View>
         </View>
+        )}
 
         {/* Right Column: Form Area */}
         <View style={styles.rightColumn}>
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              isCompactLandscape && styles.scrollContentCompact,
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -312,6 +316,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
     paddingVertical: 48,
+  },
+  scrollContentCompact: {
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    justifyContent: 'flex-start',
   },
   formCard: {
     width: '100%',

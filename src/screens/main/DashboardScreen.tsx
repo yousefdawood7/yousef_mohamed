@@ -472,7 +472,7 @@ export const DashboardScreen: React.FC = () => {
             </View>
 
             {/* Bottom Clinical Assurance Cards */}
-            <View style={styles.insightsRow}>
+            <View style={[styles.insightsRow, !isTablet && styles.insightsColumn]}>
               <View style={styles.insightCard}>
                 <View style={[styles.insightIconCircle, { backgroundColor: '#EEF2FF' }]}>
                   <Feather name="activity" size={18} color="#4F46E5" />
@@ -1046,6 +1046,9 @@ const styles = StyleSheet.create({
   insightsRow: {
     flexDirection: 'row',
     gap: 16,
+  },
+  insightsColumn: {
+    flexDirection: 'column',
   },
   insightCard: {
     flex: 1,

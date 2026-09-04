@@ -6,7 +6,6 @@ import {
   Image,
   Animated,
   TouchableOpacity,
-  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,8 +13,6 @@ import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { authStorage } from '../../services/api';
-
-const { width } = Dimensions.get('window');
 
 export const SplashScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp<'Splash'>>();

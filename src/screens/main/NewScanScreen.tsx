@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  useWindowDimensions,
   ActivityIndicator,
   Alert,
   ScrollView,
@@ -22,6 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NewScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { useCameraSource } from '../../hooks/useCameraSource';
+import { useOrientation } from '../../hooks/useOrientation';
 import { diagnosesApi } from '../../services/api';
 import { sendStatus, stopKeepAlive } from '../../services/mqtt';
 
@@ -58,8 +58,7 @@ const BEST_PRACTICES_TIPS = [
 
 export const NewScanScreen: React.FC = () => {
   const navigation = useNavigation<NewScanNavProp<'NewScan'>>();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 800;
+  const { isTablet, isCompactLandscape } = useOrientation();
 
   const [builtinPermission, requestBuiltinPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -413,21 +412,21 @@ export const NewScanScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Top Header */}
       <View style={styles.topAppBar}>
-        <View style={styles.brandRow}>
+        <View style={[styles.brandRow, isCompactLandscape && { flex: 1 }]}>
           <Image
             source={require('../../../assets/images/dr_hakeem_logo.png')}
             style={styles.headerLogo}
             resizeMode="contain"
           />
-          <Text style={styles.brandTitle}>DR  HAKEEM</Text>
+          <Text style={styles.brandTitle} numberOfLines={1}>DR  HAKEEM</Text>
         </View>
 
         <View style={styles.topRightControls}>
-          {/* USB Microscope Connection Pill */}
-          {devices.uvc && (
+          {/* USB Microscope Connection Pill (hidden on compact landscape to avoid overflow) */}
+          {devices.uvc && !isCompactLandscape && (
             <View style={styles.microscopePill}>
               <Ionicons name="hardware-chip-outline" size={14} color="#0284C7" />
-              <Text style={styles.microscopePillText}>
+              <Text style={styles.microscopePillText} numberOfLines={1}>
                 {uvcDeviceName || uvcDevice?.productName || 'USB MICROSCOPE ATTACHED'}
               </Text>
             </View>
@@ -435,7 +434,7 @@ export const NewScanScreen: React.FC = () => {
 
           <View style={styles.scannerStatusPill}>
             <View style={styles.statusLiveDot} />
-            <Text style={styles.scannerStatusText}>
+            <Text style={styles.scannerStatusText} numberOfLines={1}>
               {capturedUri
                 ? 'IMAGE READY FOR ANALYSIS'
                 : source === 'uvc'
@@ -609,7 +608,7 @@ export const NewScanScreen: React.FC = () => {
               </View>
 
               {/* Bottom Control Bar */}
-              <View style={styles.controlBar}>
+              <View style={[styles.controlBar, isCompactLandscape && styles.controlBarCompact]}>
                 {capturedUri ? (
                   /* Capture Confirmation Actions */
                   <View style={styles.confirmActionsRow}>
@@ -854,11 +853,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0284C7',
     letterSpacing: 0.8,
+    flexShrink: 1,
   },
   topRightControls: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexShrink: 1,
   },
   microscopePill: {
     flexDirection: 'row',
@@ -885,6 +886,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 14,
     borderRadius: 9999,
+    flexShrink: 1,
+    maxWidth: '65%',
   },
   statusLiveDot: {
     width: 8,
@@ -897,6 +900,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#00629E',
     letterSpacing: 0.6,
+    flexShrink: 1,
   },
   scrollContent: {
     padding: 28,
@@ -922,7 +926,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   viewfinderFrame: {
-    height: 440,
+    aspectRatio: 4 / 3,
     width: '100%',
     backgroundColor: '#0F172A',
     position: 'relative',
@@ -1114,6 +1118,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  controlBarCompact: {
+    padding: 12,
   },
   liveControlsRow: {
     flexDirection: 'row',

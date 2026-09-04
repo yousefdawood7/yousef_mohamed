@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -35,7 +35,7 @@ export const SignUpScreen: React.FC = () => {
   const {
     control,
     handleSubmit,
-    watch,
+    getValues,
     formState: { errors },
   } = useForm<SignUpFormData>({
     defaultValues: {
@@ -47,9 +47,15 @@ export const SignUpScreen: React.FC = () => {
     },
   });
 
-  const passwordValue = watch('password');
+  // Stable validate callback. Uses non-reactive getValues() instead of watch()
+  // to avoid re-rendering the whole screen on every password keystroke.
+  const validateConfirmPassword = useCallback(
+    (value?: string) =>
+      value === getValues('password') || 'Passwords do not match',
+    [getValues]
+  );
 
-  const onSubmit = async (data: SignUpFormData) => {
+  const onSubmit = useCallback(async (data: SignUpFormData) => {
     setLoading(true);
     setAuthError(null);
     try {
@@ -73,7 +79,11 @@ export const SignUpScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [register]);
+
+  const onPressCreateAccount = useCallback(() => {
+    void handleSubmit(onSubmit)();
+  }, [handleSubmit, onSubmit]);
 
   return (
     <AuthLayout
@@ -159,8 +169,7 @@ export const SignUpScreen: React.FC = () => {
           isPassword={true}
           rules={{
             required: 'Please confirm your password',
-            validate: (value) =>
-              value === passwordValue || 'Passwords do not match',
+            validate: validateConfirmPassword,
           }}
         />
 
@@ -168,7 +177,7 @@ export const SignUpScreen: React.FC = () => {
         <GradientButton
           title="Create Account"
           iconName="arrow-forward"
-          onPress={handleSubmit(onSubmit)}
+          onPress={onPressCreateAccount}
           loading={loading}
           style={styles.submitBtn}
         />

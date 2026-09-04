@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -40,7 +40,7 @@ export const SignInScreen: React.FC = () => {
     },
   });
 
-  const onSubmit = async (data: SignInFormData) => {
+  const onSubmit = useCallback(async (data: SignInFormData) => {
     setLoading(true);
     setAuthError(null);
     try {
@@ -59,7 +59,11 @@ export const SignInScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [login]);
+
+  const onPressSignIn = useCallback(() => {
+    void handleSubmit(onSubmit)();
+  }, [handleSubmit, onSubmit]);
 
   return (
     <AuthLayout
@@ -123,7 +127,7 @@ export const SignInScreen: React.FC = () => {
         <GradientButton
           title="SIGN IN"
           iconName="arrow-forward"
-          onPress={handleSubmit(onSubmit)}
+          onPress={onPressSignIn}
           loading={loading}
           style={styles.submitBtn}
         />

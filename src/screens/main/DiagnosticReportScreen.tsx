@@ -6,7 +6,6 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  useWindowDimensions,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { ScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { ProgressBar } from '../../components/ProgressBar';
+import { useOrientation } from '../../hooks/useOrientation';
 import { diagnosesApi, DiagnosisResult } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { sendStatus, stopKeepAlive, RobotStatus } from '../../services/mqtt';
@@ -28,8 +28,7 @@ export const DiagnosticReportScreen: React.FC = () => {
   const initialImageUri: string | undefined = routeParams.imageUri;
 
   const { patientProfile } = useAuth();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 800;
+  const { isTablet, isLandscape } = useOrientation();
 
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(initialDiagnosisData || null);
   const [loading, setLoading] = useState<boolean>(!initialDiagnosisData);
@@ -291,7 +290,12 @@ export const DiagnosticReportScreen: React.FC = () => {
               </View>
 
               {/* Stacked Image View (Original + Heatmap Overlay) */}
-              <View style={styles.primaryImageWrapper}>
+              <View
+                style={[
+                  styles.primaryImageWrapper,
+                  !isTablet && { height: isLandscape ? 200 : 240 },
+                ]}
+              >
                 <Image
                   source={originalImageSource}
                   style={styles.primaryImage}

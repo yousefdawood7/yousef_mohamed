@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { ScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
+import { useOrientation } from '../../hooks/useOrientation';
 import { diagnosesApi, DiagnosisResult } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { getInitials } from '../../utils/formatters';
@@ -62,10 +63,10 @@ const CardImage: React.FC<CardImageProps> = ({ imageUrl, isMalignant, id }) => {
 export const ScanHistoryScreen: React.FC = () => {
   const navigation = useNavigation<ScanNavProp<'ScanHistory'>>();
   const { user } = useAuth();
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 800;
-  const numColumns = isTablet ? 3 : 1;
-  const pageSize = isTablet ? 9 : 6;
+  const { isTablet, isLandscape } = useOrientation();
+  // Tablet: 3 columns. Phone landscape: 2 columns. Phone portrait: 1 column.
+  const numColumns = isTablet ? 3 : isLandscape ? 2 : 1;
+  const pageSize = isTablet ? 9 : isLandscape ? 6 : 6;
 
   const [scans, setScans] = useState<DiagnosisResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -374,7 +375,7 @@ export const ScanHistoryScreen: React.FC = () => {
           }
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          columnWrapperStyle={isTablet ? styles.columnWrapper : undefined}
+          columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
           showsVerticalScrollIndicator={false}
         />
       )}
