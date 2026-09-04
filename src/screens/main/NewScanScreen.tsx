@@ -12,6 +12,7 @@ import {
   Platform,
   NativeModules,
   NativeEventEmitter,
+  DeviceEventEmitter,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -197,19 +198,34 @@ export const NewScanScreen: React.FC = () => {
   });
 
   useEffect(() => {
-    let sub: any = null;
+    let subs: any[] = [];
     if (Platform.OS === 'android') {
       try {
         const { UsbDeviceManager } = NativeModules;
         if (UsbDeviceManager) {
           const eventEmitter = new NativeEventEmitter(UsbDeviceManager);
-          sub = eventEmitter.addListener('onHardwareCaptureButtonPressed', () => {
-            console.log('[NewScanScreen] Physical microscope capture button clicked!');
-            capturePhotoRef.current();
-          });
+          subs.push(
+            eventEmitter.addListener('onHardwareCaptureButtonPressed', () => {
+              console.log('[NewScanScreen] Physical microscope capture button clicked!');
+              capturePhotoRef.current();
+            })
+          );
         }
       } catch (err) {
         console.warn('[NewScanScreen] Error subscribing to hardware capture button:', err);
+      }
+
+      // Global event emitted by the patched UVC library when the device's physical
+      // button fires a UVC VideoControl button event.
+      try {
+        subs.push(
+          DeviceEventEmitter.addListener('onPhysicalCaptureButtonPressed', () => {
+            console.log('[NewScanScreen] UVC physical button event received');
+            capturePhotoRef.current();
+          })
+        );
+      } catch (err) {
+        console.warn('[NewScanScreen] Error subscribing to UVC physical button:', err);
       }
     }
 
@@ -225,7 +241,7 @@ export const NewScanScreen: React.FC = () => {
     }
 
     return () => {
-      if (sub) sub.remove();
+      subs.forEach((s) => s?.remove());
       if (Platform.OS === 'web') {
         window.removeEventListener('keydown', handleKeyDown);
       }

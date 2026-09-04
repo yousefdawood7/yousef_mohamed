@@ -1,0 +1,87 @@
+--- a/node_modules/@kartik512/react-native-uvc-camera/android/src/main/java/com/uvccamera/UvcCameraView.kt
++++ b/node_modules/@kartik512/react-native-uvc-camera/android/src/main/java/com/uvccamera/UvcCameraView.kt
+@@ -11,11 +11,13 @@
+ import android.view.TextureView
+ import android.widget.FrameLayout
+ import com.facebook.react.bridge.ReactContext
++import com.facebook.react.modules.core.DeviceEventManagerModule
+ import com.facebook.react.uimanager.UIManagerHelper
+ import com.herohan.uvcapp.CameraHelper
+ import com.herohan.uvcapp.ICameraHelper
+ import com.herohan.uvcapp.IImageCapture
+ import com.herohan.uvcapp.IImageCapture.OnImageCaptureCallback
++import com.serenegiant.usb.IButtonCallback
+ import com.serenegiant.usb.Size
+ import com.serenegiant.widget.AspectRatioTextureView
+ import com.uvccamera.utils.SaveHelper
+@@ -90,8 +92,9 @@
+     private fun clearCameraHelper() {
+         synchronized(cameraLock) {
+             cameraHelper?.let { helper ->
+-                // Remove callback before releasing to prevent memory leaks
++                // Remove callbacks before releasing to prevent memory leaks
+                 helper.setStateCallback(null)
++                helper.setButtonCallback(null)
+                 helper.release()
+             }
+             cameraHelper = null
+@@ -194,6 +197,23 @@
+     }
+ 
+     /**
++     * Static inner class to avoid implicit reference to outer class.
++     * Listens for UVC VideoControl button events from the physical device button.
++     */
++    private class ButtonCallbackImpl(view: UvcCameraView) : IButtonCallback {
++        private val viewRef = WeakReference(view)
++
++        override fun onButton(button: Int, state: Int) {
++            // state == 1 means pressed (state 0 = released)
++            viewRef.get()?.let { view ->
++                if (!view.isViewAttached || state != 1) return
++                if (DEBUG) Log.d(TAG, "UVC physical button pressed: button=$button")
++                view.handlePhysicalButtonPressed()
++            }
++        }
++    }
++
++    /**
+      * Static inner class for SurfaceTextureListener to avoid memory leaks
+      */
+     private class SurfaceTextureListenerImpl(view: UvcCameraView) : TextureView.SurfaceTextureListener {
+@@ -230,6 +250,9 @@
+             cameraHelper?.apply {
+                 startPreview()
+ 
++                // Listen for the physical capture button on the UVC device
++                setButtonCallback(ButtonCallbackImpl(this@UvcCameraView))
++
+                 // Resize Logic
+                 previewSize?.let { size -> resizePreviewView(size) }
+ 
+@@ -241,6 +264,25 @@
+         }
+     }
+ 
++    /**
++     * Called when the physical UVC device button is pressed.
++     * Emits a global RN device event so the JS layer can trigger a capture
++     * through the same handleCapturePhoto path as the on-screen shutter.
++     */
++    fun handlePhysicalButtonPressed() {
++        synchronized(cameraLock) {
++            if (cameraHelper?.isCameraOpened != true) return
++        }
++        // Ensure the JS event is emitted on the main thread (button callback can
++        // arrive from a non-UI thread).
++        mainHandler.post {
++            val reactContext = context as? ReactContext ?: return@post
++            reactContext
++                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
++                ?.emit("onPhysicalCaptureButtonPressed", null)
++        }
++    }
++
+     private fun resizePreviewView(size: Size) {
+         mainHandler.post {
+             if (!isViewAttached) return@post
