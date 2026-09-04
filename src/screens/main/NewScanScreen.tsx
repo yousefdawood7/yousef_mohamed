@@ -22,6 +22,7 @@ import { NewScanNavProp } from '../../types/navigation';
 import { colors } from '../../theme/colors';
 import { useCameraSource } from '../../hooks/useCameraSource';
 import { diagnosesApi } from '../../services/api';
+import { sendStatus, stopKeepAlive } from '../../services/mqtt';
 
 // UVC USB Microscope (Android). Auto-connects on mount.
 import { UvcCamera, type UvcCameraHandle, CameraErrorCodes } from '@kartik512/react-native-uvc-camera';
@@ -249,6 +250,8 @@ export const NewScanScreen: React.FC = () => {
 
   const handleConfirmAnalysis = async () => {
     if (!capturedUri || isAnalyzing) return;
+    // Show "loading" on the robot eyes while the AI inference runs.
+    sendStatus('loading');
     setIsAnalyzing(true);
     try {
       // Send image to Dr. Hakeem AI diagnosis & heatmap explainability engine
@@ -260,6 +263,9 @@ export const NewScanScreen: React.FC = () => {
         diagnosisData: diagnosisResult,
       });
     } catch (err: any) {
+      // Inference failed or timed out — stop the loading keep-alive so the
+      // device falls back to idle/blue instead of staying stuck on the spinner.
+      stopKeepAlive();
       const msg =
         err?.response?.data?.message ||
         err?.message ||
@@ -269,6 +275,10 @@ export const NewScanScreen: React.FC = () => {
       setIsAnalyzing(false);
     }
   };
+
+  // Safety net: if the user leaves this screen while an analysis is in-flight,
+  // stop the loading keep-alive so the robot eyes don't stay stuck on the spinner.
+  useEffect(() => () => stopKeepAlive(), []);
 
   // Note: UVC camera lifecycle (open/close) is handled automatically by
   // @kartik512/react-native-uvc-camera when the <UvcCamera> view is mounted.

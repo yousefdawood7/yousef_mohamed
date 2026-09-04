@@ -44,19 +44,28 @@ export const DiagnosticReportScreen: React.FC = () => {
     }
   }, [scanId, initialDiagnosisData]);
 
-  // Derive and dispatch Robot Status ('sick' vs 'good') to ESP32 robot eyes via MQTT
+  // Derive and dispatch Robot Status ('loading' | 'sick' | 'medium' | 'good')
+  // to ESP32 robot eyes via MQTT
   useEffect(() => {
     if (!diagnosis) return;
 
-    // Condition is flagged as 'sick' if malignant or moderate/high/critical risk
-    const isConcerning =
-      diagnosis.is_malignant ||
-      diagnosis.risk_level === 'high' ||
-      diagnosis.risk_level === 'critical' ||
-      diagnosis.risk_level === 'moderate';
+    const isMalignant = diagnosis.is_malignant ?? false;
+    const risk = diagnosis.risk_level || 'low';
 
-    const derivedStatus: RobotStatus = isConcerning ? 'sick' : 'good';
+    // 'sick' for severe (malignant / high / critical),
+    // 'medium' for moderate risk, otherwise 'good'.
+    let derivedStatus: RobotStatus;
+    if (isMalignant || risk === 'high' || risk === 'critical') {
+      derivedStatus = 'sick';
+    } else if (risk === 'moderate') {
+      derivedStatus = 'medium';
+    } else {
+      derivedStatus = 'good';
+    }
+
     setRobotStatus(derivedStatus);
+    // Sending the result clears the prior "loading" keep-alive and starts a
+    // new interval for the resulting state.
     sendStatus(derivedStatus);
 
     return () => {
@@ -71,6 +80,8 @@ export const DiagnosticReportScreen: React.FC = () => {
   };
 
   const loadReport = async (id: string | number) => {
+    // Show "loading" on the robot eyes while fetching the report.
+    sendStatus('loading');
     setLoading(true);
     try {
       const data = await diagnosesApi.getScan(id);
@@ -143,6 +154,30 @@ export const DiagnosticReportScreen: React.FC = () => {
   // Format risk level badges and numerical metrics safely
   const isMalignant = diagnosis.is_malignant ?? false;
   const riskLevel = diagnosis.risk_level || 'low';
+
+  // DEV panel helpers for the 4 robot-eye status states.
+  const statusColor =
+    robotStatus === 'sick'
+      ? '#DC2626'
+      : robotStatus === 'medium' || robotStatus === 'loading'
+      ? '#D97706'
+      : '#059669';
+  const statusLabelStyle =
+    robotStatus === 'sick'
+      ? styles.devStatusSick
+      : robotStatus === 'medium' || robotStatus === 'loading'
+      ? styles.devStatusMedium
+      : styles.devStatusGood;
+  const activeDevStyle = (st: RobotStatus) =>
+    st === 'good'
+      ? styles.devBtnGoodActive
+      : st === 'sick'
+      ? styles.devBtnSickActive
+      : styles.devBtnMediumActive;
+  const devBtnLabel = (st: RobotStatus) =>
+    st === 'loading'
+      ? 'Send "loading" 🟡'
+      : `Send "${st}" ${st === 'sick' ? '🔴' : st === 'medium' ? '🟠' : '🟢'}`;
 
   const rawConf = diagnosis.confidence;
   const confidenceNumeric =
@@ -418,66 +453,52 @@ export const DiagnosticReportScreen: React.FC = () => {
                   <View
                     style={[
                       styles.devStatusBadge,
-                      robotStatus === 'sick' ? styles.devStatusSick : styles.devStatusGood,
+                      statusLabelStyle,
                     ]}
                   >
                     <View
                       style={[
                         styles.devStatusDot,
-                        { backgroundColor: robotStatus === 'sick' ? '#DC2626' : '#059669' },
+                        { backgroundColor: statusColor },
                       ]}
                     />
                     <Text
                       style={[
                         styles.devStatusText,
-                        { color: robotStatus === 'sick' ? '#DC2626' : '#059669' },
+                        { color: statusColor },
                       ]}
                     >
-                      MQTT: {robotStatus.toUpperCase()}
+                      {robotStatus === 'loading' ? 'MQTT: LOADING…' : `MQTT: ${robotStatus.toUpperCase()}`}
                     </Text>
                   </View>
                 </View>
 
                 <Text style={styles.devNoticeText}>
-                  Topic: <Text style={{ fontWeight: '700' }}>esp32/status</Text> • 20s Keep-Alive Active
+                  Topic: <Text style={{ fontWeight: '700' }}>esp32/status</Text> • 5.5s Keep-Alive Active
                 </Text>
 
                 <View style={styles.devToggleRow}>
-                  <TouchableOpacity
-                    style={[
-                      styles.devBtn,
-                      robotStatus === 'good' && styles.devBtnGoodActive,
-                    ]}
-                    onPress={() => handleDevStatusToggle('good')}
-                    activeOpacity={0.7}
-                  >
-                    <Text
+                  {(['good', 'medium', 'sick', 'loading'] as RobotStatus[]).map((st) => (
+                    <TouchableOpacity
+                      key={st}
                       style={[
-                        styles.devBtnText,
-                        robotStatus === 'good' && styles.devBtnTextActive,
+                        styles.devBtn,
+                        robotStatus === st && styles.devBtnActive,
+                        robotStatus === st && activeDevStyle(st),
                       ]}
+                      onPress={() => handleDevStatusToggle(st)}
+                      activeOpacity={0.7}
                     >
-                      Send "good" 🟢
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.devBtn,
-                      robotStatus === 'sick' && styles.devBtnSickActive,
-                    ]}
-                    onPress={() => handleDevStatusToggle('sick')}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.devBtnText,
-                        robotStatus === 'sick' && styles.devBtnTextActive,
-                      ]}
-                    >
-                      Send "sick" 🔴
-                    </Text>
-                  </TouchableOpacity>
+                      <Text
+                        style={[
+                          styles.devBtnText,
+                          robotStatus === st && styles.devBtnTextActive,
+                        ]}
+                      >
+                        {devBtnLabel(st)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
             )}
@@ -1084,6 +1105,9 @@ const styles = StyleSheet.create({
   devStatusSick: {
     backgroundColor: '#FEE2E2',
   },
+  devStatusMedium: {
+    backgroundColor: '#FEF3C7',
+  },
   devStatusGood: {
     backgroundColor: '#ECFDF5',
   },
@@ -1116,6 +1140,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  devBtnActive: {
+    borderColor: '#000000',
+  },
   devBtnGoodActive: {
     backgroundColor: '#059669',
     borderColor: '#047857',
@@ -1123,6 +1150,10 @@ const styles = StyleSheet.create({
   devBtnSickActive: {
     backgroundColor: '#DC2626',
     borderColor: '#B91C1C',
+  },
+  devBtnMediumActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#B45309',
   },
   devBtnText: {
     fontSize: 12,

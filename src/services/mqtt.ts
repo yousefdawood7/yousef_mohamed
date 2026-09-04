@@ -23,9 +23,9 @@ const PASSWORD =
   expoExtra?.mqttPassword ||
   '123456789';
 
-const KEEP_ALIVE_INTERVAL_MS = 20000; // 20s (well under 60s ESP32 timeout)
+const KEEP_ALIVE_INTERVAL_MS = 5500; // 5.5s (well under the 10s ESP32 timeout)
 
-export type RobotStatus = 'sick' | 'good';
+export type RobotStatus = 'loading' | 'sick' | 'medium' | 'good';
 
 let client: MqttClient | null = null;
 let lastKnownStatus: RobotStatus | null = null;
@@ -87,9 +87,11 @@ function publishStatus(status: RobotStatus) {
 }
 
 /**
- * Sends a status update ('sick' | 'good') to the ESP32 robot eyes via MQTT.
- * Automatically initiates/refreshes the 20s keep-alive timer so the ESP32
- * does not time out and fall back to the unknown state.
+ * Sends a status update ('loading' | 'sick' | 'medium' | 'good') to the ESP32
+ * robot eyes via MQTT.
+ * Automatically initiates/refreshes the 5.5s keep-alive timer so the ESP32
+ * does not time out and fall back to the unknown state. Clears any previous
+ * keep-alive interval so exactly one runs at a time.
  */
 export function sendStatus(status: RobotStatus) {
   lastKnownStatus = status;
@@ -97,7 +99,7 @@ export function sendStatus(status: RobotStatus) {
   // Publish immediately
   publishStatus(status);
 
-  // Refresh keep-alive interval
+  // Clear any prior keep-alive, then start a fresh one for THIS status.
   if (keepAliveTimer) {
     clearInterval(keepAliveTimer);
   }
@@ -110,7 +112,8 @@ export function sendStatus(status: RobotStatus) {
 }
 
 /**
- * Stops the 20-second keep-alive timer (e.g. when leaving report screen or logging out).
+ * Stops the 5.5-second keep-alive timer (e.g. when leaving the report screen,
+ * logging out, or when a process fails/times out so the device returns to idle).
  */
 export function stopKeepAlive() {
   if (keepAliveTimer) {
