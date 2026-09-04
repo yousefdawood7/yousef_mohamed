@@ -28,7 +28,7 @@ interface FormInputProps<T extends FieldValues> extends Omit<TextInputProps, 'de
   isPassword?: boolean;
 }
 
-export function FormInput<T extends FieldValues>({
+function FormInputBase<T extends FieldValues>({
   name,
   control,
   rules,
@@ -206,3 +206,8 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 });
+
+// Memoized to prevent sibling fields from re-rendering when one field changes.
+// `control` is stable across renders and `rules` are memoized at call sites,
+// so props stay referentially stable and memoization is effective.
+export const FormInput = React.memo(FormInputBase) as typeof FormInputBase;

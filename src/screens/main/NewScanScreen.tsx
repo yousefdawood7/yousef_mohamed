@@ -512,6 +512,7 @@ export const NewScanScreen: React.FC = () => {
                     style={styles.cameraView}
                     facing={facing}
                     enableTorch={torch}
+                    ratio="4:3"
                   />
                 )}
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -32,13 +32,34 @@ export const SignInScreen: React.FC = () => {
   const {
     control,
     handleSubmit,
-    formState: { errors },
   } = useForm<SignInFormData>({
     defaultValues: {
       email: 'salma.mohamed@example.com',
       password: 'Password123!',
     },
   });
+
+  // Stable rule objects so React.memo(FormInput) can skip re-renders.
+  const emailRules = useMemo(
+    () => ({
+      required: 'Email address is required',
+      pattern: {
+        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+        message: 'Please enter a valid email address',
+      },
+    }),
+    []
+  );
+  const passwordRules = useMemo(
+    () => ({
+      required: 'Password is required',
+      minLength: {
+        value: 6,
+        message: 'Password must be at least 6 characters',
+      },
+    }),
+    []
+  );
 
   const onSubmit = useCallback(async (data: SignInFormData) => {
     setLoading(true);
@@ -95,13 +116,7 @@ export const SignInScreen: React.FC = () => {
           label="EMAIL ADDRESS"
           placeholder="doctor@clinic.com"
           keyboardType="email-address"
-          rules={{
-            required: 'Email address is required',
-            pattern: {
-              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Please enter a valid email address',
-            },
-          }}
+          rules={emailRules}
         />
 
         <FormInput
@@ -114,13 +129,7 @@ export const SignInScreen: React.FC = () => {
             text: 'FORGOT PASSWORD?',
             onPress: () => navigation.navigate('ForgotPassword'),
           }}
-          rules={{
-            required: 'Password is required',
-            minLength: {
-              value: 6,
-              message: 'Password must be at least 6 characters',
-            },
-          }}
+          rules={passwordRules}
         />
 
         {/* Submit Button */}

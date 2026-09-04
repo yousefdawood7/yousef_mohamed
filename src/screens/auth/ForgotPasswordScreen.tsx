@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -29,14 +29,25 @@ export const ForgotPasswordScreen: React.FC = () => {
   const {
     control,
     handleSubmit,
-    formState: { errors },
   } = useForm<ForgotPasswordFormData>({
     defaultValues: {
       email: '',
     },
   });
 
-  const onSubmit = async (data: ForgotPasswordFormData) => {
+  // Stable rule object so React.memo(FormInput) can skip re-renders.
+  const emailRules = useMemo(
+    () => ({
+      required: 'Professional email address is required',
+      pattern: {
+        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+        message: 'Please enter a valid email address',
+      },
+    }),
+    []
+  );
+
+  const onSubmit = useCallback(async (data: ForgotPasswordFormData) => {
     setLoading(true);
     try {
       const response = await authApi.forgotPassword(data.email);
@@ -60,7 +71,11 @@ export const ForgotPasswordScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigation]);
+
+  const onPressSendResetLink = useCallback(() => {
+    void handleSubmit(onSubmit)();
+  }, [handleSubmit, onSubmit]);
 
   return (
     <AuthLayout
@@ -88,20 +103,14 @@ export const ForgotPasswordScreen: React.FC = () => {
           placeholder="dr.hakeem@medicalcenter.org"
           keyboardType="email-address"
           leftIcon="mail-outline"
-          rules={{
-            required: 'Professional email address is required',
-            pattern: {
-              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Please enter a valid email address',
-            },
-          }}
+          rules={emailRules}
         />
 
         {/* Submit Action */}
         <GradientButton
           title="Send Reset Link"
           iconName="arrow-forward"
-          onPress={handleSubmit(onSubmit)}
+          onPress={onPressSendResetLink}
           loading={loading}
           borderRadius={12}
           style={styles.submitBtn}

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -36,7 +36,6 @@ export const SignUpScreen: React.FC = () => {
     control,
     handleSubmit,
     getValues,
-    formState: { errors },
   } = useForm<SignUpFormData>({
     defaultValues: {
       fullName: '',
@@ -53,6 +52,45 @@ export const SignUpScreen: React.FC = () => {
     (value?: string) =>
       value === getValues('password') || 'Passwords do not match',
     [getValues]
+  );
+
+  // Stable rule objects so React.memo(FormInput) can skip re-renders.
+  const fullNameRules = useMemo(
+    () => ({
+      required: 'Full name is required',
+      minLength: {
+        value: 3,
+        message: 'Name must be at least 3 characters',
+      },
+    }),
+    []
+  );
+  const emailRules = useMemo(
+    () => ({
+      required: 'Work email is required',
+      pattern: {
+        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+        message: 'Please enter a valid email address',
+      },
+    }),
+    []
+  );
+  const passwordRules = useMemo(
+    () => ({
+      required: 'Password is required',
+      minLength: {
+        value: 8,
+        message: 'Password must be at least 8 characters',
+      },
+    }),
+    []
+  );
+  const confirmPasswordRules = useMemo(
+    () => ({
+      required: 'Please confirm your password',
+      validate: validateConfirmPassword,
+    }),
+    [validateConfirmPassword]
   );
 
   const onSubmit = useCallback(async (data: SignUpFormData) => {
@@ -114,13 +152,7 @@ export const SignUpScreen: React.FC = () => {
           name="fullName"
           label="FULL NAME"
           placeholder="Dr. Jane Doe"
-          rules={{
-            required: 'Full name is required',
-            minLength: {
-              value: 3,
-              message: 'Name must be at least 3 characters',
-            },
-          }}
+          rules={fullNameRules}
         />
 
         <FormInput
@@ -129,13 +161,7 @@ export const SignUpScreen: React.FC = () => {
           label="WORK EMAIL"
           placeholder="jane.doe@hospital.org"
           keyboardType="email-address"
-          rules={{
-            required: 'Work email is required',
-            pattern: {
-              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Please enter a valid email address',
-            },
-          }}
+          rules={emailRules}
         />
 
         <FormInput
@@ -152,13 +178,7 @@ export const SignUpScreen: React.FC = () => {
           label="PASSWORD"
           placeholder="••••••••"
           isPassword={true}
-          rules={{
-            required: 'Password is required',
-            minLength: {
-              value: 8,
-              message: 'Password must be at least 8 characters',
-            },
-          }}
+          rules={passwordRules}
         />
 
         <FormInput
@@ -167,10 +187,7 @@ export const SignUpScreen: React.FC = () => {
           label="CONFIRM PASSWORD"
           placeholder="••••••••"
           isPassword={true}
-          rules={{
-            required: 'Please confirm your password',
-            validate: validateConfirmPassword,
-          }}
+          rules={confirmPasswordRules}
         />
 
         {/* Submit Button */}
