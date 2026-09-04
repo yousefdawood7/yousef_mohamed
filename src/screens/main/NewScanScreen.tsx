@@ -1175,7 +1175,6 @@ const styles = StyleSheet.create({
   },
   confirmBtnWrapper: {
     borderRadius: 10,
-    overflow: 'hidden',
     shadowColor: '#451EBB',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -1183,6 +1182,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   confirmBtnGradient: {
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
